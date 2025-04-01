@@ -10,7 +10,7 @@ import psycopg as ps
 from database import Database
 from handlers import register
 
-log_path = os.path.join(os.path.dirname(__file__), "py_log.log")
+log_path = os.path.join(os.path.dirname(__file__), "logs/py_log.log")
 
 logging.basicConfig(
     level=logging.INFO,
