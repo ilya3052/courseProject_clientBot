@@ -9,7 +9,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from psycopg import sql
 
-from client_bot.database import Database
+from shared.database import Database
 
 router = Router()
 
@@ -102,7 +102,7 @@ def insert_data(data: dict):
     with connect.cursor() as cur:
         try:
             cur.execute(
-                insert_user.format(data['tgchat_id'], data['fullname'][0], data['fullname'][1],
+                insert_user.format(data['tgchat_id'], data['fullname'][1], data['fullname'][0],
                                    data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
                                    data['phonenumber']))
             user_id = cur.fetchone()[0]
