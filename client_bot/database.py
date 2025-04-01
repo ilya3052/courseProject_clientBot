@@ -1,9 +1,9 @@
+import logging
+import os
 import sys
 
 import psycopg as ps
-import os
 from dotenv import load_dotenv
-import logging
 
 load_dotenv()
 

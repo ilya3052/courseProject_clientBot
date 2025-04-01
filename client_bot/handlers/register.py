@@ -1,15 +1,15 @@
-import psycopg as ps
-from psycopg import sql
-from aiogram import Router
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.filters import Command, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
 import logging
-
 import re
 
-from database import Database
+import psycopg as ps
+from aiogram import Router
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import Message
+from psycopg import sql
+
+from client_bot.database import Database
 
 router = Router()
 

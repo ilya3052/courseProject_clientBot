@@ -2,10 +2,10 @@ import asyncio
 import logging
 import os
 
+import psycopg as ps
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-import psycopg as ps
 
 from database import Database
 from handlers import register
