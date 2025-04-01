@@ -7,10 +7,10 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from database import Database
+from shared.database import Database
 from handlers import register
 
-log_path = os.path.join(os.path.dirname(__file__), "logs/py_log.log")
+log_path = os.path.join(os.path.dirname(__file__), "../logs/client_bot_logs.log")
 
 logging.basicConfig(
     level=logging.INFO,
