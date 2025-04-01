@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 
 bot = Bot(
-    token=os.getenv("BOT_TOKEN"),
+    token=os.getenv("CLIENT_BOT_TOKEN"),
     default=DefaultBotProperties(
         parse_mode=ParseMode.HTML
     )
