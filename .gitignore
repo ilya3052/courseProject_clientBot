@@ -3,3 +3,6 @@
 /.venv/
 /logs/
 __*__
+/.idea/
+/.obsidian/
+__init__.py

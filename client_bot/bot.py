@@ -8,7 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from shared.database import Database
-from handlers import register
+from handlers import catalog, register
 
 log_path = os.path.join(os.path.dirname(__file__), "../logs/client_bot_logs.log")
 
@@ -20,23 +20,21 @@ logging.basicConfig(
     encoding="UTF-8"
 )
 
-bot = Bot(
-    token=os.getenv("CLIENT_BOT_TOKEN"),
-    default=DefaultBotProperties(
-        parse_mode=ParseMode.HTML
-    )
-)
-
-logging.info("Бот запущен")
-connect: ps.connect = Database.get_connection()
-
-logging.info("Соединение создано")
-
-dp = Dispatcher()
-dp.include_router(register.router)
-
 
 async def main():
+    bot = Bot(
+        token=os.getenv("CLIENT_BOT_TOKEN"),
+        default=DefaultBotProperties(
+            parse_mode=ParseMode.HTML
+        )
+    )
+
+    logging.info("Бот запущен")
+
+    dp = Dispatcher()
+    dp.include_router(register.router)
+    dp.include_router(catalog.catalog_router)
+
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
