@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -8,7 +9,7 @@ from aiogram.enums import ParseMode
 
 from handlers import catalog, register
 
-log_path = os.path.join(os.path.dirname(__file__), "../logs/client_bot_logs.log")
+log_path = os.path.join(os.path.dirname(__file__), "logs/client_bot_logs.log")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,21 +21,25 @@ logging.basicConfig(
 
 
 async def main():
-    bot = Bot(
-        token=os.getenv("BOT_TOKEN"),
-        default=DefaultBotProperties(
-            parse_mode=ParseMode.HTML
+    try:
+        bot = Bot(
+            token=os.getenv("BOT_TOKEN"),
+            default=DefaultBotProperties(
+                parse_mode=ParseMode.HTML
+            )
         )
-    )
 
-    logging.info("Бот запущен")
+        logging.info("Бот запущен")
 
-    dp = Dispatcher()
-    dp.include_router(register.router)
-    dp.include_router(catalog.catalog_router)
+        dp = Dispatcher()
+        dp.include_router(register.router)
+        dp.include_router(catalog.catalog_router)
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        logging.info("Завершение работы")
+        logging.shutdown()
 
 
 if __name__ == "__main__":
