@@ -1,20 +1,17 @@
-
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.fsm.context import FSMContext
-
-from aiogram import Router
-from aiogram.filters import StateFilter, Command
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
-from aiogram import F
+import logging
 
 import psycopg as ps
+from aiogram import F
+from aiogram import Router
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import StateFilter, Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import Message, CallbackQuery
 from psycopg import sql
 
 from keyboards.products import get_products
 from shared.database import Database
-
-import logging
 
 router = Router()
 
@@ -68,13 +65,14 @@ async def action(callback: CallbackQuery, state: FSMContext):
     match callback.data.split("_")[1]:
         case "next":
             if (page + 1) * page_size < len(data['products_list']):
-                await state.update_data(page=page+1)
+                await state.update_data(page=page + 1)
         case "previous":
             if page > 0:
-                await state.update_data(page=page-1)
+                await state.update_data(page=page - 1)
 
     await show_products(callback, state)
     await callback.answer()
+
 
 async def show_products(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -89,7 +87,6 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
         await state.set_state(Catalog.show_products)
     except TelegramBadRequest as TBR:
         logging.info(TBR)
-
 
 # @router.callback_query(F.data.startswith("product_"))
 # async def show_products(message: Message, state: FSMContext):
