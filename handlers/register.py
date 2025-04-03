@@ -23,7 +23,6 @@ class Register(StatesGroup):
 @router.message(StateFilter(None), Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
-    cursor = connect.cursor()
     select_nickname = (sql.SQL(
         """SELECT c.client_nickname 
         FROM users u JOIN client c ON u.user_id = c.user_id 
@@ -48,7 +47,6 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         await message.answer(f"Добро пожаловать, {nickname[0]}!")
         logging.info(f"Осуществлен вход в систему, tgchat_id = {message.chat.id}")
-    cursor.close()
 
 
 @router.message(Register.enter_name)
