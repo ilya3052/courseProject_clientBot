@@ -1,6 +1,10 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from psycopg.postgres import types
 
 
 def get_categories_kb(data: list[str]):
-    pass
+    builder = InlineKeyboardBuilder()
+    for item in data:
+        builder.button(text=item, callback_data=f"category_{item}")
+    builder.adjust(3)
+
+    return builder.as_markup()
