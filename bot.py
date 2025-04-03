@@ -8,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from handlers import catalog, register
+from shared.database import Database
 
 log_path = os.path.join(os.path.dirname(__file__), "logs/client_bot_logs.log")
 
@@ -33,13 +34,14 @@ async def main():
 
         dp = Dispatcher()
         dp.include_router(register.router)
-        dp.include_router(catalog.catalog_router)
+        dp.include_router(catalog.router)
 
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
         logging.info("Завершение работы")
         logging.shutdown()
+        Database.close_connection()
 
 
 if __name__ == "__main__":
