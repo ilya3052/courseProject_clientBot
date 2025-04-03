@@ -1,6 +1,5 @@
 from aiogram import Router
 from aiogram.filters import StateFilter, Command
-from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 
@@ -20,7 +19,7 @@ categories_list = ['Сумки и аксессуары', 'Кухонные пр�
 
 @catalog_router.message(StateFilter(None), Command("catalog"))
 async def cmd_catalog(message: Message):
-    from client_bot.keyboards.categories import get_categories_kb
+    from keyboards.categories import get_categories_kb
     await message.answer(
         "Выберите категорию",
         reply_markup=get_categories_kb(categories_list)

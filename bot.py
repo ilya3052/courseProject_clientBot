@@ -2,12 +2,10 @@ import asyncio
 import logging
 import os
 
-import psycopg as ps
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from shared.database import Database
 from handlers import catalog, register
 
 log_path = os.path.join(os.path.dirname(__file__), "../logs/client_bot_logs.log")
@@ -23,7 +21,7 @@ logging.basicConfig(
 
 async def main():
     bot = Bot(
-        token=os.getenv("CLIENT_BOT_TOKEN"),
+        token=os.getenv("BOT_TOKEN"),
         default=DefaultBotProperties(
             parse_mode=ParseMode.HTML
         )
