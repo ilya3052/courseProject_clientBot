@@ -13,7 +13,7 @@ from shared.database import Database
 log_path = os.path.join(os.path.dirname(__file__), "logs/client_bot_logs.log")
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     filename=log_path,
     filemode="a",
     format="%(asctime)s %(levelname)s %(message)s",
