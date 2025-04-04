@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -16,7 +15,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     filename=log_path,
     filemode="a",
-    format="%(asctime)s %(levelname)s %(message)s",
+    format="%(asctime)s %(levelname)s [User: %(user_id)s, State: %(state)s] %(message)s",
     encoding="UTF-8"
 )
 
