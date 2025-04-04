@@ -16,42 +16,10 @@ logging.basicConfig(
     level=logging.DEBUG,
     filename=log_path,
     filemode="a",
-    format="%(asctime)s %(levelname)s [User: %(user_id)s, State: %(state)s] %(message)s",
+    format="%(asctime)s %(levelname)s %(message)s",
     encoding="UTF-8"
 )
 
-def log_event(message: str, chat_id: Optional[int] = None, user_id: Optional[int] = None, state: Optional[str] = None, error: str = None, level: str = "info"):
-    match level:
-        case "info":
-            logging.info(
-                message,
-                extra={
-                    'chat_id': chat_id or 'N/A',
-                    'user_id': user_id or 'N/A',
-                    'state': state or 'N/A',
-                    'error': error or 'N/A'
-                }
-            )
-        case "error":
-            logging.error(
-                message,
-                extra={
-                    'chat_id': chat_id or 'N/A',
-                    'user_id': user_id or 'N/A',
-                    'state': state or 'N/A',
-                    'error': error or 'N/A'
-                }
-            )
-        case "critical":
-            logging.critical(
-                message,
-                extra={
-                    'chat_id': chat_id or 'N/A',
-                    'user_id': user_id or 'N/A',
-                    'state': state or 'N/A',
-                    'error': error or 'N/A'
-                }
-            )
 
 async def main():
     try:
@@ -62,7 +30,7 @@ async def main():
             )
         )
 
-        log_event("Бот запущен")
+        logging.info("Бот запущен")
 
         dp = Dispatcher()
         dp.include_router(register.router)
@@ -71,7 +39,7 @@ async def main():
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
-        log_event("Завершение работы")
+        logging.info("Завершение работы")
         logging.shutdown()
         Database.close_connection()
 
