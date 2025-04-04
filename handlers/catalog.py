@@ -7,10 +7,11 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from psycopg import sql
 
 from keyboards.categories_list import get_categories_kb
+from keyboards.product_info import get_product_info_kb
 from keyboards.product_list import get_products_list_kb
 from shared.database import Database
 
@@ -38,14 +39,7 @@ async def cmd_catalog(message: Message, state: FSMContext):
             )
             await show_categories(state, message=message)
         except ps.Error as e:
-            logging.error(f"Произошла ошибка при выполнении запроса",
-                          extra={
-                              'chat_id': message.chat.id,
-                              'user_id': message.from_user.id,
-                              'state': state,
-                              'error': e,
-                          }
-                          )
+            logging.error("Произошла ошибка при выполнении запроса")
 
 
 @router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category))
@@ -65,14 +59,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
             )
             await show_products(callback, state)
         except ps.Error as e:
-            logging.error(f"Произошла ошибка при выполнении запроса",
-                          extra={
-                              'chat_id': callback.message.chat.id,
-                              'user_id': callback.message.from_user.id,
-                              'state': state,
-                              'error': e,
-                          }
-                          )
+            logging.error("Произошла ошибка при выполнении запроса")
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_category))
@@ -97,7 +84,7 @@ async def category_action(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.show_products))
-async def product_action(callback: CallbackQuery, state: FSMContext):
+async def product_list_action(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     page = data['product_page']
     match callback.data.split("_")[1]:
@@ -137,14 +124,7 @@ async def show_categories(state: FSMContext, callback: CallbackQuery = None, mes
             )
         await state.set_state(Catalog.select_category)
     except TelegramBadRequest as TBR:
-        logging.info(f"Произошла ошибка при выполнении запроса",
-                      extra={
-                          'chat_id': context.chat.id,
-                          'user_id': context.from_user.id,
-                          'state': state,
-                          'error': TBR,
-                      }
-                      )
+        logging.error(f"Произошла ошибка при выполнении запроса {TBR}")
 
 
 async def show_products(callback: CallbackQuery, state: FSMContext):
@@ -159,18 +139,11 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(Catalog.show_products)
     except TelegramBadRequest as TBR:
-        logging.info(f"Произошла ошибка при выполнении запроса",
-                     extra={
-                         'chat_id': callback.message.chat.id,
-                         'user_id': callback.message.from_user.id,
-                         'state': state,
-                         'error': TBR,
-                     }
-                     )
+        logging.error(f"Произошла ошибка при выполнении запроса {TBR}")
 
 
 @router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products))
-async def show_product(callback: CallbackQuery, state: FSMContext):
+async def get_product(callback: CallbackQuery, state: FSMContext):
     """
         Выборка данных по артикулу, к сообщению добавляется изображение товара, изображения хранятся в папке в корне проекта, их имена совпадают с артикулом, возможно изображения будут разнесены по подпапкам каждой категории для большего удобства
         Клавиатура трехрядная
@@ -179,29 +152,39 @@ async def show_product(callback: CallbackQuery, state: FSMContext):
         3 ряд: возврат в каталог
     """
     connect: ps.connect = Database.get_connection()
-    category = callback.data.split("_")[1]
     select_products = (sql.SQL(
-        """SELECT product_article, product_name FROM product WHERE product_article = {}"""
+        """SELECT product_article FROM product"""
     ))
     with connect.cursor() as cur:
         try:
-            products = cur.execute(select_products.format(callback.data.split("_")[1])).fetchall()
-            await state.update_data(
-                products_list=products,
-                product_page=0,
-                category=category
-            )
-            await show_products(callback, state)
+            articles = cur.execute(select_products).fetchall()
+            """
+                сделать блядское получение текущего артикула
+            """
+
+            await callback.message.delete()
+            await state.set_state(Catalog.select_product)
+
+            await state.update_data(articles=articles)
+            await show_product(callback, state)
         except ps.Error as e:
-            logging.error(f"Произошла ошибка при выполнении запроса",
-                          extra={
-                              'chat_id': callback.message.chat.id,
-                              'user_id': callback.message.from_user.id,
-                              'state': state,
-                              'error': e,
-                          }
-                          )
+            logging.error(f"Произошла ошибка при выполнении запроса {e}")
     await callback.answer()
+
+
+async def show_product(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    # print(data)
+    # await callback.message.answer_photo(
+    #     image,
+    #     caption=product_info[4],
+    #     reply_markup=get_product_info_kb(),
+    # )
+
+
+@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product))
+async def product_action(callback: CallbackQuery, state: FSMContext):
+    pass
 
 
 @router.callback_query(StateFilter(None))
