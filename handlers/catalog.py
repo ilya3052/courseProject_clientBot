@@ -1,4 +1,5 @@
 import logging
+import math
 
 import psycopg as ps
 from aiogram import F
@@ -46,7 +47,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     category = callback.data.split("_")[1]
     select_products = (sql.SQL(
-        """SELECT * FROM product WHERE product_category = {}"""
+        """SELECT product_article, product_name FROM product WHERE product_category = {}"""
     ))
     with connect.cursor() as cur:
         try:
@@ -85,7 +86,7 @@ async def category_action(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.show_products))
 async def product_action(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    page = data.get('product_page', 0)
+    page = data['product_page']
     match callback.data.split("_")[1]:
         case "next":
             if (page + 1) * page_size < len(data['products_list']):
@@ -130,7 +131,7 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
     category = data['category']
     try:
         await callback.message.edit_text(
-            f"Товары категории {category}\n",
+            f"Товары категории {category}.\nВсего в категории {len(products)} товаров",
             reply_markup=get_products_list_kb(products[page_size * page:page_size * (page + 1)])
         )
         await state.set_state(Catalog.show_products)
