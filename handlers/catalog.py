@@ -238,7 +238,10 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
             await state.set_state(Catalog.show_products)
             await show_products(callback, state)
         case "cancel":
-            pass
+            # переход в профиль
+            await callback.message.delete()
+            await state.clear()
+            await state.set_state(None)
     await callback.answer()
 
 
