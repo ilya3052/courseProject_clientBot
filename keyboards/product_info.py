@@ -7,7 +7,7 @@ def get_product_info_kb(added_to_cart: bool = False):
         builder.button(text="-", callback_data="count_decr")
         builder.button(text="+", callback_data="count_inc")
     else:
-        builder.button(text="Добавить в корзину 🛒", callback_data="add_to_cart")
+        builder.button(text="Добавить в корзину 🛒", callback_data="action_addToCart")
     builder.adjust(2)
 
     static_builder = InlineKeyboardBuilder()
