@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import psycopg as ps
@@ -7,7 +8,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
 from psycopg import sql
 
 from keyboards.categories_list import get_categories_kb
@@ -39,7 +40,7 @@ async def cmd_catalog(message: Message, state: FSMContext):
             )
             await show_categories(state, message=message)
         except ps.Error as e:
-            logging.error("Произошла ошибка при выполнении запроса")
+            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
 @router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category))
@@ -59,7 +60,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
             )
             await show_products(callback, state)
         except ps.Error as e:
-            logging.error("Произошла ошибка при выполнении запроса")
+            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_category))
@@ -124,7 +125,7 @@ async def show_categories(state: FSMContext, callback: CallbackQuery = None, mes
             )
         await state.set_state(Catalog.select_category)
     except TelegramBadRequest as TBR:
-        logging.error(f"Произошла ошибка при выполнении запроса {TBR}")
+        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
 
 
 async def show_products(callback: CallbackQuery, state: FSMContext):
@@ -139,7 +140,14 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(Catalog.show_products)
     except TelegramBadRequest as TBR:
-        logging.error(f"Произошла ошибка при выполнении запроса {TBR}")
+        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
+        loading_msg = await callback.message.answer("⌛ Загружаем товары...")
+        await callback.message.delete()
+        await loading_msg.edit_text(
+            f"Товары категории {category}.\nВсего в категории {len(products)} товаров",
+            reply_markup=get_products_list_kb(products[page_size * page:page_size * (page + 1)])
+        )
+        await state.set_state(Catalog.show_products)
 
 
 @router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products))
@@ -153,38 +161,85 @@ async def get_product(callback: CallbackQuery, state: FSMContext):
     """
     connect: ps.connect = Database.get_connection()
     select_products = (sql.SQL(
-        """SELECT product_article FROM product"""
+        """SELECT product_article FROM product WHERE product_category = {}"""
     ))
     with connect.cursor() as cur:
         try:
-            articles = cur.execute(select_products).fetchall()
-            """
-                сделать блядское получение текущего артикула
-            """
-
+            data = await state.get_data()
+            if 'articles' not in data:
+                articles = cur.execute(select_products.format(data['category'])).fetchall()
+                articles = [str(item[0]) for item in articles]
+                await state.update_data(articles=articles)
             await callback.message.delete()
             await state.set_state(Catalog.select_product)
 
-            await state.update_data(articles=articles)
-            await show_product(callback, state)
+            await state.update_data(current_article=callback.data.split("_")[1])
+            await show_product(callback, state, True)
         except ps.Error as e:
-            logging.error(f"Произошла ошибка при выполнении запроса {e}")
-    await callback.answer()
+            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+    await callback.answer(show_alert=False)
 
 
-async def show_product(callback: CallbackQuery, state: FSMContext):
+async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: bool):
     data = await state.get_data()
-    # print(data)
-    # await callback.message.answer_photo(
-    #     image,
-    #     caption=product_info[4],
-    #     reply_markup=get_product_info_kb(),
-    # )
+    current_article = data['current_article']
+    image = FSInputFile(f"product_images/{current_article}.jpg")
+    connect: ps.connect = Database.get_connection()
+    select_product_info = (sql.SQL(
+        """SELECT product_price, product_description FROM product WHERE product_article = {}"""
+    ))
+    with connect.cursor() as cur:
+        try:
+            product_info = cur.execute(select_product_info.format(current_article)).fetchone()
+        except ps.Error as e:
+            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+    try:
+        match is_new_msg:
+            case True:
+                await callback.message.answer_photo(
+                    image,
+                    caption=product_info[1],
+                    reply_markup=get_product_info_kb(),
+                )
+            case False:
+                await callback.message.edit_media(
+                    InputMediaPhoto(
+                        media=image,
+                        caption=product_info[1]
+                    ),
+                    reply_markup=get_product_info_kb(),
+                )
+    except TelegramBadRequest as TBR:
+        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
+        await callback.answer()
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product))
 async def product_action(callback: CallbackQuery, state: FSMContext):
-    pass
+    data = await state.get_data()
+    current_article = data['current_article']
+    articles = data['articles']
+    current_index = articles.index(current_article)
+    print(data)
+    match callback.data.split("_")[1]:
+        case "addToCart":
+            pass
+        case "next":
+            new_index = (current_index + 1) % len(articles)  # Циклический переход
+            new_article = articles[new_index]
+            await state.update_data(current_article=new_article)
+            await show_product(callback, state, False)
+        case "previous":
+            new_index = (current_index - 1) % len(articles)  # Циклический переход
+            new_article = articles[new_index]
+            await state.update_data(current_article=new_article)
+            await show_product(callback, state, False)
+        case "back":
+            await state.set_state(Catalog.show_products)
+            await show_products(callback, state)
+        case "cancel":
+            pass
+    await callback.answer()
 
 
 @router.callback_query(StateFilter(None))
