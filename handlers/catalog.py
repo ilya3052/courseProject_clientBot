@@ -11,9 +11,9 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
 from psycopg import sql
 
-from keyboards.categories_list import get_categories_kb
-from keyboards.product_info import get_product_info_kb
-from keyboards.product_list import get_products_list_kb
+from keyboards.categories_list_kb import get_categories_kb
+from keyboards.product_info_kb import get_product_info_kb
+from keyboards.product_list_kb import get_products_list_kb
 from shared.database import Database
 
 router = Router()
