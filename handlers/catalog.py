@@ -278,7 +278,7 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext):
 async def create_order(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_client_id = (sql.SQL(
-        "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE user_tgchat_id = {};"
+        "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = {};"
     ))
     get_new_order_id = (sql.SQL(
         'INSERT INTO "order" (client_id) VALUES ({}) RETURNING order_id;'
@@ -286,7 +286,7 @@ async def create_order(callback: CallbackQuery, state: FSMContext):
 
     with connect.cursor() as cur:
         try:
-            client_id = cur.execute(select_client_id.format(callback.message.chat.id)).fetchone()[0]
+            client_id = cur.execute(select_client_id.format(callback.from_user.id)).fetchone()[0]
             order_id = cur.execute(get_new_order_id.format(client_id)).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
