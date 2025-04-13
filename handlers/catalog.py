@@ -16,6 +16,7 @@ from keyboards.product_info_kb import get_product_info_kb
 from keyboards.product_list_kb import get_products_list_kb
 from shared.database import Database
 
+
 router = Router()
 
 page_size = 3
@@ -149,13 +150,6 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products))
 async def get_product(callback: CallbackQuery, state: FSMContext):
-    """
-        Выборка данных по артикулу, к сообщению добавляется изображение товара, изображения хранятся в папке в корне проекта, их имена совпадают с артикулом, возможно изображения будут разнесены по подпапкам каждой категории для большего удобства
-        Клавиатура трехрядная
-        1 ряд: по умолчанию "Добавить в корзину", при нажатии меняется на набор из двух кнопок (-/+), а в конец сообщения добавляется строка "количество в заказе: 1"
-        2 ряд: переход по карточкам продукта
-        3 ряд: возврат в каталог
-    """
     connect: ps.connect = Database.get_connection()
     select_products = (sql.SQL(
         """SELECT product_article FROM product WHERE product_category = {}"""
@@ -191,7 +185,7 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
     try:
         with connect.cursor() as cur:
             product_info = cur.execute(select_product_info.format(current_article)).fetchone()
-            description = product_info[1]
+            description = f"{product_info[1]}\nСтоимость товара: {product_info[0]}"
             await state.update_data(product_description=description)
     except ps.Error as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
