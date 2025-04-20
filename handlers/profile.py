@@ -1,18 +1,26 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import StateFilter, Command
-from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import Message, CallbackQuery
 import logging
 from psycopg import sql
 import psycopg as ps
 from datetime import datetime as dt
-
+from icecream import ic
+from keyboards.profile_kb import get_profile_kb
 from shared.database import Database
 
 router = Router()
 
 
+class Profile(StatesGroup):
+    show_profile = State()
+    show_orders = State()
+
+
 @router.message(StateFilter(None), Command("profile"))
-async def profile_command(message: Message):
+async def profile_command(message: Message, state: FSMContext):
     """
     Обращение (типа "добрый день, ...")
     Информация о количестве заказов, общая сумма всех заказов, наиболее часто
@@ -22,15 +30,30 @@ async def profile_command(message: Message):
     удаление профиля (в регистрацию добавить возможность импортировать информацию о профиле)
     (возможно получение информации сделать процедурой, экспорт информации однозначно процедура)
     """
-    msg = await get_user_info(message)
+    msg = await get_user_info(message, state)
     if msg:
         await message.answer(
-            text=msg
+            text=msg,
+            reply_markup=get_profile_kb()
         )
+        await state.set_state(Profile.show_profile)
 
 
+@router.callback_query(F.data.startswith("get_"), StateFilter(Profile.show_profile))
+async def profile_action(callback: CallbackQuery, state: FSMContext):
+    match callback.data.split("_")[1]:
+        case "orders":
+            await get_orders(callback, state)
+            await state.set_state(Profile.show_orders)
+    await callback.answer()
 
-async def get_user_info(message: Message) -> str | None:
+
+async def get_orders(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    ic(data)
+
+
+async def get_user_info(message: Message, state: FSMContext) -> str | None:
     connect: ps.connect = Database.get_connection()
     get_user_nickname = (sql.SQL(
         "SELECT client_nickname FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = {};"
@@ -101,7 +124,7 @@ ORDER BY
             logging.exception(f"Произошла ошибка при выполнении запроса {e}")
             connect.rollback()
             return None
-
+    await state.update_data(client_id=client_id)
     time = dt.now().hour
     greeting = (
         "Доброй ночи" if 0 <= time < 6 else
