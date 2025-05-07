@@ -8,14 +8,15 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InlineKeyboardButton, \
+    InlineKeyboardMarkup
+from icecream import ic
 from psycopg import sql
 
-from keyboards.categories_list_kb import get_categories_kb
-from keyboards.product_info_kb import get_product_info_kb
-from keyboards.product_list_kb import get_products_list_kb
+from keyboards import get_categories_kb
+from keyboards import get_product_info_kb
+from keyboards import get_products_list_kb
 from shared.database import Database
-
 
 router = Router()
 
@@ -28,7 +29,7 @@ class Catalog(StatesGroup):
     select_product = State()
 
 
-@router.message(StateFilter(None), Command("catalog"))
+@router.message(Command("catalog"))
 async def cmd_catalog(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_categories = """SELECT DISTINCT product_category FROM product"""
@@ -157,10 +158,9 @@ async def get_product(callback: CallbackQuery, state: FSMContext):
     with connect.cursor() as cur:
         try:
             data = await state.get_data()
-            if 'articles' not in data:
-                articles = cur.execute(select_products.format(data['category'])).fetchall()
-                articles = [str(item[0]) for item in articles]
-                await state.update_data(articles=articles)
+            articles = cur.execute(select_products.format(data['category'])).fetchall()
+            articles = [str(item[0]) for item in articles]
+            await state.update_data(articles=articles)
             await callback.message.delete()
             await state.set_state(Catalog.select_product)
 
@@ -222,6 +222,7 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product))
 async def product_action(callback: CallbackQuery, state: FSMContext):
+    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     current_article = data['current_article']
     articles = data['articles']
@@ -263,25 +264,30 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext):
     await create_order(callback, state)
     await add_products(state)
     await callback.message.delete()
-    await callback.message.answer("Заказ создан, подождите назначения курьера!")
+    await callback.message.answer("Заказ создан, подождите назначения курьера!",
+                                  reply_markup=InlineKeyboardMarkup(
+                                      inline_keyboard=[
+                                          [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
+                                      ]
+                                  )
+                                  )
     await state.clear()
     await state.set_state(None)
-    # показываем профиль
 
 
 async def create_order(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_client_id = (sql.SQL(
-        "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = {};"
+        "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_tgchat_id = {} AND u.user_role = 'user';"
     ))
     get_new_order_id = (sql.SQL(
-        'INSERT INTO "order" (client_id) VALUES ({}) RETURNING order_id;'
+        "INSERT INTO \"order\" (client_id) VALUES ({}) RETURNING order_id;"
     ))
 
     with connect.cursor() as cur:
         try:
-            client_id = cur.execute(select_client_id.format(callback.from_user.id)).fetchone()[0]
-            order_id = cur.execute(get_new_order_id.format(client_id)).fetchone()[0]
+            client_id = cur.execute(select_client_id.format(callback.message.chat.id)).fetchone()[0]
+            order_id = cur.execute(get_new_order_id.format(client_id, 0)).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
         except ps.Error as e:
