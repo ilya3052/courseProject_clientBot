@@ -26,11 +26,11 @@ async def cmd_start(message: Message, state: FSMContext):
     select_nickname = (sql.SQL(
         """SELECT c.client_nickname 
         FROM users u JOIN client c ON u.user_id = c.user_id 
-        WHERE u.user_id = {};"""
+        WHERE u.user_tgchat_id = {};"""
     ))
     with connect.cursor() as cur:
         try:
-            nickname = cur.execute(select_nickname.format(message.from_user.id)).fetchone()
+            nickname = cur.execute(select_nickname.format(message.chat.id)).fetchone()
             connect.commit()
             logging.info("Запрос выполнен")
         except ps.Error as e:
@@ -42,7 +42,7 @@ async def cmd_start(message: Message, state: FSMContext):
             "Укажите имя в формате ФИО (отчество при наличии)\n"
         )
         await state.set_state(Register.enter_name)
-        await state.update_data(tgchat_id=message.chat.id, user_id=message.from_user.id)
+        await state.update_data(tgchat_id=message.chat.id)
         logging.info("Имя введено")
     else:
         await message.answer(f"Добро пожаловать, {nickname[0]}!")
@@ -90,20 +90,20 @@ def insert_data(data: dict):
                            .replace('+', ''))
     insert_user = (sql.SQL(
         """INSERT INTO users 
-            (user_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber) 
-            VALUES ({}, {}, {}, {}, {}, {});"""
+            (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber) 
+            VALUES ({}, {}, {}, {}, {}, {}) RETURNING user_id;"""
     ))
     insert_client = (sql.SQL(
         "INSERT INTO client (user_id, client_nickname) VALUES ({}, {});"
     ))
     with connect.cursor() as cur:
         try:
-            cur.execute(
-                insert_user.format(data['user_id'], data['fullname'][1], data['fullname'][0],
+            user_id = cur.execute(
+                insert_user.format(data['tgchat_id'], data['fullname'][1], data['fullname'][0],
                                    data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
-                                   data['phonenumber']))
+                                   data['phonenumber'])).fetchone()[0]
             cur.execute(insert_client.format(
-                data['user_id'], data['nickname']
+                user_id, data['nickname']
             ))
             connect.commit()
             logging.info("Запрос выполнен")
