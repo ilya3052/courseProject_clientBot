@@ -35,7 +35,6 @@ async def handle_profile_message(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "profile")
 async def handle_profile_callback(callback: CallbackQuery, state: FSMContext):
-    print(F.data)
     await handle_profile_common(callback.message.chat.id, callback.message.edit_text, state)
     await callback.answer()
 
