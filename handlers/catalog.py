@@ -261,6 +261,7 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
 
 
 async def confirm_order(callback: CallbackQuery, state: FSMContext):
+    async_connect = await Database.get_async_connection()
     await create_order(callback, state)
     await add_products(state)
     await callback.message.delete()
@@ -271,8 +272,11 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext):
                                       ]
                                   )
                                   )
+
+    await async_connect.execute(f"NOTIFY create_order, '/order 42'")
     await state.clear()
     await state.set_state(None)
+
 
 
 async def create_order(callback: CallbackQuery, state: FSMContext):
