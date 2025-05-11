@@ -42,7 +42,7 @@ async def main():
     finally:
         logging.info("Завершение работы")
         logging.shutdown()
-        Database.close_connection()
+        await Database.close_connection()
 
 
 if __name__ == "__main__":
