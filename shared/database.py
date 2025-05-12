@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-import json
 
 import asyncpg
 import psycopg as ps

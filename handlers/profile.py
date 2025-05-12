@@ -1,16 +1,18 @@
+import logging
+from datetime import datetime as dt
+
+import psycopg as ps
 from aiogram import Router, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
-import logging
-from psycopg import sql, connect
-import psycopg as ps
-from datetime import datetime as dt
 from icecream import ic
-from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
+from psycopg import sql
+
 from keyboards import get_orders_list_kb
+from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
 from shared.database import Database
 
 router = Router()

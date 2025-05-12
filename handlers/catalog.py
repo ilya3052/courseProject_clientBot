@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import psycopg as ps
@@ -10,7 +9,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InlineKeyboardButton, \
     InlineKeyboardMarkup
-from icecream import ic
 from psycopg import sql
 
 from keyboards import get_categories_kb
