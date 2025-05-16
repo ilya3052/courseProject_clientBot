@@ -361,7 +361,7 @@ ORDER BY
     )
     hello_message = (f"👋🏼 {greeting}, {user_nickname}!\n"
                      f"🛒 Общее количество заказов: {order_count}\n"
-                     f"💰 Общая сумма заказов: {round(order_total_amount, 2) or 0}\n"
+                     f"💰 Общая сумма заказов: {round(order_total_amount or 0, 2)}\n"
                      f"📈 Больше всего заказывали в категориях: {', '.join([category[0] for category in most_ordered_category]) or "еще нет заказов"}\n"
                      f"📅 Дата регистрации: {register_date}\n")
 
