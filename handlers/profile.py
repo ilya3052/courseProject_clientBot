@@ -11,9 +11,10 @@ from aiogram.types import Message, CallbackQuery
 from icecream import ic
 from psycopg import sql
 
-from keyboards import get_orders_list_kb
+from bot_instance import bot
+from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
-from shared.database import Database
+from database import Database
 
 router = Router()
 page_size = 3
@@ -120,7 +121,7 @@ async def orders_pagination(callback: CallbackQuery, state: FSMContext):
     await show_orders(callback, state)
 
 
-@router.callback_query(F.data.startswith('order_'), StateFilter(Profile.show_orders))
+@router.callback_query(F.data.startswith('order_'))
 async def show_order(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
@@ -192,18 +193,47 @@ async def confirm_receipt(callback: CallbackQuery, state:FSMContext, order_id: i
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     msg = data.get('msg')
-
+    ic(data)
     update_status = (sql.SQL(
         "UPDATE \"order\" SET order_status = 2 WHERE order_id = {};"
+    ))
+    get_courier_id = (sql.SQL(
+        "SELECT c.courier_id FROM courier c JOIN delivery d ON d.courier_id = c.courier_id WHERE d.order_id = {};"
+    ))
+
+    update_courier_status = (sql.SQL(
+        "UPDATE courier SET courier_is_busy_with_order = false WHERE courier_id = {};"
     ))
     await callback.message.edit_text(text=f"{msg}\nПожалуйста оцените доставку!", reply_markup=get_rate_order_kb())
     with connect.cursor() as cur:
         try:
             cur.execute(update_status.format(order_id))
+            courier_id = cur.execute(get_courier_id.format(order_id)).fetchone()[0]
+            cur.execute(update_courier_status.format(courier_id))
             connect.commit()
         except ps.Error as e:
             logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
             connect.rollback()
+
+
+async def send_notify(order_id: int):
+    connect: ps.connect = Database.get_connection()
+    get_client_id = (sql.SQL(
+        "SELECT client_id FROM \"order\" WHERE order_id = {};"
+    ))
+    get_user_tgchat_id = (sql.SQL(
+        "SELECT u.user_tgchat_id FROM users u JOIN client c ON u.user_id = c.user_id WHERE c.client_id = {};"
+    ))
+    try:
+        with connect.cursor() as cur:
+            client_id = cur.execute(get_client_id.format(order_id)).fetchone()[0]
+            tgchat_id = cur.execute(get_user_tgchat_id.format(client_id)).fetchone()[0]
+    except ps.Error as p:
+        logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
+
+    await bot.send_message(chat_id=tgchat_id,
+                           text="На заказ назначен курьер хуй хуевич",
+                           reply_markup=get_delivery_kb(order_id))
 
 
 # оформить в качестве хранимой процедуры (вызов через callproc)
@@ -213,8 +243,6 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     delivery_rating = int(callback.data.split("_")[1])
     order_id = data.get('order_id')
-
-    ic(data)
 
     update_delivery_rating = sql.SQL("UPDATE delivery SET delivery_rating = {} WHERE order_id = {};")
 
