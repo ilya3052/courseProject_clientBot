@@ -48,13 +48,19 @@ class Database:
         return Database._async_connect
 
     @staticmethod
+    async def listen_channel(channel_name: str, callback):
+        conn = await Database.get_async_connection()
+        await conn.add_listener(channel_name, callback)
+        logging.info(f"Подписка на канал '{channel_name}' установлена")
+
+    @staticmethod
     async def notify_channel(channel_name: str, payload: str):
         conn = await Database.get_async_connection()  # безопасно экранирует строку
         payload_escaped = payload.replace("'", "''")  # экранируем одинарные кавычки
         sql = f"NOTIFY {channel_name}, '{payload_escaped}';"
 
         await conn.execute(sql)
-        logging.info(f"📣 Отправлено уведомление на канал '{channel_name}': {payload}")
+        logging.info(f"Отправлено уведомление на канал '{channel_name}': {payload}")
 
     @staticmethod
     async def close_connection():
