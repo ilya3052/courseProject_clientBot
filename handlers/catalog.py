@@ -14,7 +14,7 @@ from psycopg import sql
 from keyboards import get_categories_kb
 from keyboards import get_product_info_kb
 from keyboards import get_products_list_kb
-from shared.database import Database
+from database import Database
 
 router = Router()
 

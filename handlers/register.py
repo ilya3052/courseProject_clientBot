@@ -9,7 +9,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from psycopg import sql
 
-from shared.database import Database
+from database import Database
 
 router = Router()
 
