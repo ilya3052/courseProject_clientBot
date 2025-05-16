@@ -8,5 +8,4 @@ def order_info_kb(status):
     builder.button(text="Вернуться назад ↩️️", callback_data="action_back")
     builder.adjust(1)
 
-
     return builder.as_markup()

@@ -11,10 +11,10 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, 
     InlineKeyboardMarkup
 from psycopg import sql
 
+from database import Database
 from keyboards import get_categories_kb
 from keyboards import get_product_info_kb
 from keyboards import get_products_list_kb
-from database import Database
 
 router = Router()
 
@@ -273,7 +273,6 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext):
     await Database.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
     await state.clear()
     await state.set_state(None)
-
 
 
 async def create_order(callback: CallbackQuery, state: FSMContext):

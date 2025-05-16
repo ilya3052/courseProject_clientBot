@@ -12,9 +12,9 @@ from icecream import ic
 from psycopg import sql
 
 from bot_instance import bot
+from database import Database
 from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
-from database import Database
 
 router = Router()
 page_size = 3
@@ -32,9 +32,11 @@ async def handle_profile_common(user_id: int, send_func, state: FSMContext):
         await send_func(text=msg, reply_markup=get_profile_kb())
         await state.set_state(Profile.show_profile)
 
+
 @router.message(Command("profile"))
 async def handle_profile_message(message: Message, state: FSMContext):
     await handle_profile_common(message.chat.id, message.answer, state)
+
 
 @router.callback_query(F.data == "profile")
 async def handle_profile_callback(callback: CallbackQuery, state: FSMContext):
@@ -189,7 +191,7 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def confirm_receipt(callback: CallbackQuery, state:FSMContext, order_id: int):
+async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: int):
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     msg = data.get('msg')

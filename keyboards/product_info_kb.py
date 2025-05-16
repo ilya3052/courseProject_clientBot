@@ -20,5 +20,4 @@ def get_product_info_kb(added_to_cart: bool = False):
         builder.button(text="Отменить заказ ❌", callback_data="action_cancel")
         builder.adjust(1, 2, 1, 1)
 
-
     return builder.as_markup()
