@@ -10,6 +10,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from icecream import ic
 from psycopg import sql
+from psycopg.errors import LockNotAvailable
 
 from bot_instance import bot
 from database import Database
@@ -80,6 +81,8 @@ async def get_orders(callback: CallbackQuery, state: FSMContext):
 
 async def show_orders(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+    ic(data)
+
     orders = data.get('orders_list', [])
     page = data.get('orders_page', 0)
 
@@ -129,7 +132,7 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     order_id = data.get('order_id') or callback.data.split("_")[1]
     get_order_info = (sql.SQL(
-        """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, count(p.product_article), p.product_name, p.product_price 
+        """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, COUNT(p.product_article), p.product_name, p.product_price 
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
@@ -139,18 +142,43 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
     WHERE o.order_id = {}
     GROUP BY o.order_id, u.user_surname, u.user_name, p.product_article, u.user_phonenumber;"""
     ))
+
+    get_not_accept_order_info = (sql.SQL(
+        """SELECT o.order_id, o.order_status, p.product_article, COUNT(p.product_article), p.product_name, p.product_price 
+    FROM "order" o 
+        JOIN added a ON o.order_id = a.order_id 
+        JOIN product p ON a.product_article = p.product_article 
+    WHERE o.order_id = {}
+    GROUP BY o.order_id, p.product_article;"""
+    ))
+
+    is_order_accept = True
+
     with connect.cursor() as cur:
         try:
             order_info = cur.execute(get_order_info.format(order_id)).fetchall()
             if not order_info:
-                raise Warning('Курьер еще не назначен на заказ!')
+                order_info = cur.execute(get_not_accept_order_info.format(order_id)).fetchall()
+                is_order_accept = False
+                # raise Warning('Курьер еще не назначен на заказ!')
         except ps.Error as e:
             logging.exception(f"Произошла ошибка при выполнении запроса {e}")
             await callback.answer()
             return
-        except Warning as wr:
-            await callback.answer(str(wr), True)
-            return
+        # except Warning as wr:
+        # await callback.answer(str(wr), True)
+        # return
+    ic(order_info)
+    if is_order_accept:
+        msg = generate_accepted_order_info(order_info, order_id)
+    else:
+        msg = generate_non_accepted_order_info(order_info, order_id)
+    await callback.message.edit_text(text=msg, reply_markup=order_info_kb(order_info[0][1]))
+    await state.set_state(Profile.show_order)
+    await state.update_data(order_id=order_id, msg=msg)
+
+
+def generate_accepted_order_info(order_info: list[tuple], order_id: int) -> str:
     status = order_info[0][1]
     order_status = (
         "Создан" if status == 0 else
@@ -169,9 +197,29 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
            f"Курьер: {courier}\n"
            f"Товары:\n"
            f"{products}\n")
-    await callback.message.edit_text(text=msg, reply_markup=order_info_kb(status))
-    await state.set_state(Profile.show_order)
-    await state.update_data(order_id=order_id, msg=msg)
+    return msg
+
+
+def generate_non_accepted_order_info(order_info: list[tuple], order_id: int) -> str:
+    status = order_info[0][1]
+    order_status = (
+        "Создан" if status == 0 else
+        "Доставляется" if status == 1 else
+        "Доставлен клиенту"
+    )
+    courier = "Не назначен"
+    products = ""
+    total_sum = 0
+    for item in order_info:
+        products += f"{item[2]} - {item[4]}, количество в заказе - {item[3]}\n"
+        total_sum += item[3] * item[5]
+    products += f"Общая сумма заказа: {total_sum}"
+    msg = (f"Заказ №{order_id}\n"
+           f"Статус заказа: {order_status}\n"
+           f"Курьер: {courier}\n"
+           f"Товары:\n"
+           f"{products}\n")
+    return msg
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Profile.show_order))
@@ -184,6 +232,8 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
     match callback.data.split("_")[1]:
         case "confirmReceipt":
             await confirm_receipt(callback, state, order_id)
+        case "cancelOrder":
+            await cancel_order(callback, state, order_id)
         case "back":
             await state.set_state(Profile.show_orders)
             await state.update_data(order_id=None)
@@ -191,11 +241,11 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+# можно оформить как транзакцию внутри постгреса или функцию
 async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: int):
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     msg = data.get('msg')
-    ic(data)
     update_status = (sql.SQL(
         "UPDATE \"order\" SET order_status = 2 WHERE order_id = {};"
     ))
@@ -216,6 +266,26 @@ async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: 
         except ps.Error as e:
             logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
             connect.rollback()
+
+
+# можно оформить как транзакцию внутри постгреса или функцию
+async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int):
+    connect: ps.connect = Database.get_connection()
+    try:
+        with connect.cursor() as cur:
+            client_id = cur.execute(
+                "SELECT client_id FROM \"order\" WHERE order_id = {} FOR UPDATE NOWAIT".format(order_id)).fetchone()[0]
+            cur.execute("DELETE FROM \"order\" WHERE order_id = {}".format(order_id))
+
+            await callback.answer("Заказ успешно удален..", show_alert=True)
+            connect.commit()
+        await handle_profile_callback(callback, state)
+    except LockNotAvailable:
+        connect.rollback()
+        await callback.answer("Заказ уже принят курьером!")
+        return
+    except ps.Error as p:
+        logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
 
 
 async def send_notify(order_id: int):
