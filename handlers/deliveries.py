@@ -1,4 +1,4 @@
-from handlers import send_notify
+from handlers.profile import send_notify
 
 
 async def get_notify(conn, pid, channel, payload):
