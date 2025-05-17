@@ -1,8 +1,8 @@
 import asyncio
 
-from bot import setup_bot
-from logger import setup_logger
-from notify import setup_notifications
+from core import setup_bot
+from core import setup_logger
+from core import setup_notifications
 
 
 async def main():

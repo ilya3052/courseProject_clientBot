@@ -12,8 +12,8 @@ from icecream import ic
 from psycopg import sql
 from psycopg.errors import LockNotAvailable
 
-from bot_instance import bot
-from database import Database
+from core import Database
+from core import bot
 from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
 
