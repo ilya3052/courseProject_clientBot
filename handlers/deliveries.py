@@ -2,6 +2,7 @@ from handlers.profile import send_notify
 
 
 async def get_notify(conn, pid, channel, payload):
-    order_id = int(str(payload).split(":")[1].strip())
-    print(f"[{channel}] => {payload} => {order_id}")
-    await send_notify(order_id)
+    notify_type = payload.split(";")[0].split(":")[1].strip()
+    order_id = int(payload.split(";")[1].split(":")[1].strip())
+    print(f"[{channel}] => {notify_type} => {order_id}")
+    await send_notify(order_id, notify_type)
