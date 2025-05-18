@@ -2,7 +2,7 @@ import logging
 import re
 
 import psycopg as ps
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -20,7 +20,7 @@ class Register(StatesGroup):
     enter_phonenumber = State()
 
 
-@router.message(StateFilter(None), Command("start"))
+@router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_nickname = (sql.SQL(
@@ -38,7 +38,7 @@ async def cmd_start(message: Message, state: FSMContext):
             logging.critical(f"Запрос не выполнен. {e}")
     if nickname is None:
         await message.answer(
-            "Добрый день! Похоже, вы не зарегестрированы в системе, давайте пройдем быструю регистрацию.\n"
+            "Добрый день! Похоже, вы не зарегистрированы в системе, давайте пройдем быструю регистрацию.\n"
             "Укажите имя в формате ФИО (отчество при наличии)\n"
         )
         await state.set_state(Register.enter_name)
@@ -49,7 +49,7 @@ async def cmd_start(message: Message, state: FSMContext):
         logging.info("Осуществлен вход в систему")
 
 
-@router.message(Register.enter_name)
+@router.message(Register.enter_name, F.text)
 async def enter_name(message: Message, state: FSMContext):
     await message.answer("Как к вам обращаться?")
     await state.set_state(Register.enter_nickname)
@@ -59,7 +59,7 @@ async def enter_name(message: Message, state: FSMContext):
     logging.info("Обращение введено")
 
 
-@router.message(Register.enter_nickname)
+@router.message(Register.enter_nickname, F.text)
 async def enter_nickname(message: Message, state: FSMContext):
     await message.answer("Укажите номер телефона в формате +7(***)***-**-**")
     await state.set_state(Register.enter_phonenumber)
@@ -74,15 +74,17 @@ async def enter_phonenumber(message: Message, state: FSMContext):
         await state.update_data(phonenumber=message.text)
         data = await state.get_data()
         await state.clear()
-        await message.answer(f"Регистрация завершена. Добро пожаловать, {data['nickname']}")
-        insert_data(data)
-        logging.info("Регистрация завершена")
-
+        if insert_data(data):
+            await message.answer(f"Регистрация завершена. Добро пожаловать, {data['nickname']}")
+            logging.info("Регистрация завершена")
+        else:
+            await message.answer("Регистрация не завершена, попробуйте еще раз!")
+            await cmd_start(message, state)
     else:
         await message.answer("Неправильный формат ввода, попробуйте еще раз!")
 
 
-def insert_data(data: dict):
+def insert_data(data: dict) -> bool:
     connect: ps.connect = Database.get_connection()
     data['phonenumber'] = (data['phonenumber'].replace('(', '')
                            .replace(')', '')
@@ -107,6 +109,12 @@ def insert_data(data: dict):
             ))
             connect.commit()
             logging.info("Запрос выполнен")
+            return True
         except ps.Error as e:
             connect.rollback()
             logging.critical(f"Запрос не выполнен. {e}")
+        except Exception as e:
+            connect.rollback()
+            logging.exception(f"При выполнении запроса произошла ошибка: {e}")
+            return False
+
