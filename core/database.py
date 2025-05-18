@@ -74,7 +74,7 @@ class Database:
         conn = Database.get_connection()
         try:
             with conn.cursor() as cur:
-                status = cur.execute("SELECT 1 FROM users WHERE user_id = {} AND user_role = 'user';".format(user_id)).fetchone()[0]
+                status = cur.execute("SELECT 1 FROM users WHERE user_tgchat_id = {} AND user_role = 'user';".format(user_id)).fetchone()[0]
                 if status: return True
         except TypeError:
             return False

@@ -3,13 +3,13 @@ import re
 
 import psycopg as ps
 from aiogram import Router, F
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from psycopg import sql
 
-from database import Database
+from core.database import Database
 
 router = Router()
 

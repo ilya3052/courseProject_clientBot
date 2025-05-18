@@ -13,8 +13,8 @@ from psycopg import sql
 from psycopg.errors import LockNotAvailable
 
 from Filters.IsRegistered import IsRegistered
-from bot_instance import bot
-from database import Database
+from core.bot_instance import bot
+from core.database import Database
 from handlers.register import cmd_start
 from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
