@@ -13,7 +13,7 @@ from psycopg import sql
 
 from Filters.IsRegistered import IsRegistered
 from core.database import Database
-from handlers import cmd_start
+from .register import cmd_start
 from keyboards import get_categories_kb
 from keyboards import get_product_info_kb
 from keyboards import get_products_list_kb
