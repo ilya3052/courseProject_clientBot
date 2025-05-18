@@ -11,7 +11,9 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, 
     InlineKeyboardMarkup
 from psycopg import sql
 
+from Filters.IsRegistered import IsRegistered
 from core.database import Database
+from handlers import cmd_start
 from keyboards import get_categories_kb
 from keyboards import get_product_info_kb
 from keyboards import get_products_list_kb
@@ -27,7 +29,7 @@ class Catalog(StatesGroup):
     select_product = State()
 
 
-@router.message(Command("catalog"))
+@router.message(Command("catalog"), IsRegistered())
 async def cmd_catalog(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_categories = """SELECT DISTINCT product_category FROM product"""
@@ -43,7 +45,7 @@ async def cmd_catalog(message: Message, state: FSMContext):
             logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
-@router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category))
+@router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category), IsRegistered())
 async def get_category(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     category = callback.data.split("_")[1]
@@ -63,7 +65,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
             logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
-@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_category))
+@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_category), IsRegistered())
 async def category_action(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     page = data.get('category_page', 0)
@@ -84,7 +86,7 @@ async def category_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.show_products))
+@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.show_products), IsRegistered())
 async def product_list_action(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     page = data['product_page']
@@ -147,7 +149,7 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
         await state.set_state(Catalog.show_products)
 
 
-@router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products))
+@router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products), IsRegistered())
 async def get_product(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_products = (sql.SQL(
@@ -218,7 +220,7 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
         await callback.answer()
 
 
-@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product))
+@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product), IsRegistered())
 async def product_action(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
@@ -313,7 +315,7 @@ async def add_products(state: FSMContext):
             connect.rollback()
 
 
-@router.callback_query(F.data.startswith("count_"), StateFilter(Catalog.select_product))
+@router.callback_query(F.data.startswith("count_"), StateFilter(Catalog.select_product), IsRegistered())
 async def count_change(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     image = data['current_image_path']
@@ -349,3 +351,9 @@ async def count_change(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(StateFilter(None))
 async def handle_no_action(callback: CallbackQuery):
     await callback.answer()
+
+@router.message(~IsRegistered())
+@router.callback_query(~IsRegistered())
+async def reg_handler(update: Message | CallbackQuery, state: FSMContext):
+    message = update.message if isinstance(update, CallbackQuery) else update
+    await cmd_start(message, state)
