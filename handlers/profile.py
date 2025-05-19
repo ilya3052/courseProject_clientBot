@@ -119,7 +119,7 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     order_id = data.get('order_id') or callback.data.split("_")[1]
     get_order_info = (sql.SQL(
-        """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, COUNT(p.product_article), p.product_name, p.product_price 
+        """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
@@ -131,7 +131,7 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
     ))
 
     get_not_accept_order_info = (sql.SQL(
-        """SELECT o.order_id, o.order_status, p.product_article, COUNT(p.product_article), p.product_name, p.product_price 
+        """SELECT o.order_id, o.order_status, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
@@ -185,13 +185,6 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
             await show_orders(callback, state)
     await callback.answer()
 
-# @router.message(~IsRegistered())
-# async def reg_handler(message: Message, state: FSMContext):
-#     await cmd_start(message, state)
-#
-# @router.callback_query(~IsRegistered())
-# async def reg_handler(callback: CallbackQuery, state: FSMContext):
-#     await cmd_start(callback.message, state)
 
 @router.message(~IsRegistered())
 @router.callback_query(~IsRegistered())
@@ -422,6 +415,7 @@ def generate_accepted_order_info(order_info: list[tuple], order_id: int) -> str:
         "Доставляется" if status == 1 else
         "Доставлен клиенту"
     )
+    address = f"{order_info[0][9]}"
     courier = f"{order_info[0][2]} {order_info[0][3]}\nНомер телефона для связи: +{order_info[0][4]}" if status != 0 else "Не назначен"
     products = ""
     total_sum = 0
@@ -431,6 +425,7 @@ def generate_accepted_order_info(order_info: list[tuple], order_id: int) -> str:
     products += f"Общая сумма заказа: {total_sum}"
     msg = (f"Заказ №{order_id}\n"
            f"Статус заказа: {order_status}\n"
+           f"Адрес заказа: {address}\n"
            f"Курьер: {courier}\n"
            f"Товары:\n"
            f"{products}\n")
@@ -444,6 +439,7 @@ def generate_non_accepted_order_info(order_info: list[tuple], order_id: int) -> 
         "Доставляется" if status == 1 else
         "Доставлен клиенту"
     )
+    address = f"{order_info[0][6]}"
     courier = "Не назначен"
     products = ""
     total_sum = 0
@@ -453,6 +449,7 @@ def generate_non_accepted_order_info(order_info: list[tuple], order_id: int) -> 
     products += f"Общая сумма заказа: {total_sum}"
     msg = (f"Заказ №{order_id}\n"
            f"Статус заказа: {order_status}\n"
+           f"Адрес заказа: {address}\n"
            f"Курьер: {courier}\n"
            f"Товары:\n"
            f"{products}\n")

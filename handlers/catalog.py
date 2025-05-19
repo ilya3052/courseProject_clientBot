@@ -27,6 +27,7 @@ class Catalog(StatesGroup):
     select_category = State()
     show_products = State()
     select_product = State()
+    create_order = State()
 
 
 @router.message(Command("catalog"), IsRegistered())
@@ -250,8 +251,11 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
             await state.set_state(Catalog.show_products)
             await show_products(callback, state)
         case "confirm":
-            # создать заказ, добавить товары
-            await confirm_order(callback, state)
+            await callback.message.delete()
+            await callback.message.answer("Пожалуйста укажите адрес доставки!")
+            order_id = (await state.get_data()).get('order_id')
+            await state.set_state(Catalog.create_order)
+            await state.update_data(order_id=order_id)
         case "cancel":
             # переход в профиль
             await callback.message.delete()
@@ -260,11 +264,17 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def confirm_order(callback: CallbackQuery, state: FSMContext):
-    await create_order(callback, state)
+async def confirm_order(message: Message, state: FSMContext):
+    await create_order(message, state)
     await add_products(state)
-    await callback.message.delete()
-    await callback.message.answer("Заказ создан, подождите назначения курьера!",
+
+
+@router.message(F.text, StateFilter(Catalog.create_order))
+async def address_input(message: Message, state: FSMContext):
+    address = message.text
+    await state.update_data(address=address)
+    await confirm_order(message, state)
+    await message.answer("Заказ создан, подождите назначения курьера!",
                                   reply_markup=InlineKeyboardMarkup(
                                       inline_keyboard=[
                                           [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
@@ -276,20 +286,19 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(None)
 
-
-async def create_order(callback: CallbackQuery, state: FSMContext):
+async def create_order(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_client_id = (sql.SQL(
         "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_tgchat_id = {} AND u.user_role = 'user';"
     ))
     get_new_order_id = (sql.SQL(
-        "INSERT INTO \"order\" (client_id) VALUES ({}) RETURNING order_id;"
+        "INSERT INTO \"order\" (client_id, order_address) VALUES ({}, {}) RETURNING order_id;"
     ))
-
+    address = (await state.get_data()).get('address')
     with connect.cursor() as cur:
         try:
-            client_id = cur.execute(select_client_id.format(callback.message.chat.id)).fetchone()[0]
-            order_id = cur.execute(get_new_order_id.format(client_id, 0)).fetchone()[0]
+            client_id = cur.execute(select_client_id.format(message.chat.id)).fetchone()[0]
+            order_id = cur.execute(get_new_order_id.format(client_id, address)).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
         except ps.Error as e:
