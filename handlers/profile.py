@@ -27,6 +27,7 @@ class Profile(StatesGroup):
     show_profile = State()
     show_orders = State()
     show_order = State()
+    add_review = State()
 
 
 @router.message(Command("profile"), IsRegistered())
@@ -85,7 +86,28 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
             logging.exception(f"При выполнении запроса произошла ошибка: {p}")
             connect.rollback()
 
-    await show_order(callback, state)
+    await callback.message.answer("Пожалуйста, оставьте отзыв о доставке!\n(отправьте прочерк если не хотите оставлять отзыв)")
+    await state.set_state(Profile.add_review)
+    await state.update_data(order_id=order_id)
+
+
+@router.message(F.text, StateFilter(Profile.add_review))
+async def add_review(message: Message, state: FSMContext):
+    ic(await state.get_data())
+    connect: ps.connect = Database.get_connection()
+    update_review = (sql.SQL(
+        "UPDATE \"order\" SET order_review = {} WHERE order_id = {}"
+    ))
+    review = message.text
+    try:
+        with connect.cursor() as cur:
+            cur.execute(update_review.format(review))
+            connect.commit()
+    except ps.Error as p:
+        logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
+        connect.rollback()
+        return
+    # await show_order(callback, state)
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Profile.show_orders), IsRegistered())
