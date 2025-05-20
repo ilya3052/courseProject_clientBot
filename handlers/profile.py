@@ -15,9 +15,9 @@ from psycopg.errors import LockNotAvailable
 from Filters.IsRegistered import IsRegistered
 from core.bot_instance import bot
 from core.database import Database
-from .register import cmd_start
 from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
+from .register import cmd_start
 
 router = Router()
 page_size = 3
@@ -86,27 +86,40 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
             logging.exception(f"При выполнении запроса произошла ошибка: {p}")
             connect.rollback()
 
-    await callback.message.answer("Пожалуйста, оставьте отзыв о доставке!\n(отправьте прочерк если не хотите оставлять отзыв)")
+    answer = ("Пожалуйста, оставьте отзыв о доставке!" if delivery_rating == 5
+              else "Пожалуйста, опишите что вам не понравилось" if delivery_rating == 4
+    else "Приносим извинения за доставленные неудобства, пожалуйста, опишите проблему в сообщении. Мы примем меры как можно скорее!")
+
+    await callback.answer()
+    await callback.message.answer(
+        f"{answer}\n(отправьте прочерк если не хотите оставлять отзыв)")
     await state.set_state(Profile.add_review)
-    await state.update_data(order_id=order_id)
+    await state.update_data(order_id=order_id, delivery_rating=delivery_rating)
 
 
 @router.message(F.text, StateFilter(Profile.add_review))
 async def add_review(message: Message, state: FSMContext):
-    ic(await state.get_data())
     connect: ps.connect = Database.get_connection()
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    delivery_rating = data.get('delivery_rating')
     update_review = (sql.SQL(
         "UPDATE \"order\" SET order_review = {} WHERE order_id = {}"
     ))
     review = message.text
     try:
         with connect.cursor() as cur:
-            cur.execute(update_review.format(review))
+            cur.execute(update_review.format(review, order_id))
             connect.commit()
     except ps.Error as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
         connect.rollback()
         return
+    answer = ("Благодарим за оставленный отзыв" if delivery_rating == 5 else
+              "Спасибо за обратную связь!" if delivery_rating == 4 else
+              "Спасибо за обратную связь, мы уже принимаем меры по улучшению качества работы!")
+    await message.answer(answer)
+    await state.set_state(None)
     # await show_order(callback, state)
 
 
@@ -213,6 +226,7 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
 async def reg_handler(update: Message | CallbackQuery, state: FSMContext):
     message = update.message if isinstance(update, CallbackQuery) else update
     await cmd_start(message, state)
+
 
 async def handle_profile_common(user_id: int, send_func, state: FSMContext):
     msg = await get_user_info(user_id, state)
