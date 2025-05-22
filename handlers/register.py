@@ -102,8 +102,8 @@ def insert_data(data: dict) -> bool:
         try:
             user_id = cur.execute(
                 insert_user, (data['tgchat_id'], data['fullname'][1], data['fullname'][0],
-                                   data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
-                                   data['phonenumber'])).fetchone()[0]
+                              data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
+                              data['phonenumber'])).fetchone()[0]
             cur.execute(insert_client, (
                 user_id, data['nickname']
             ))
@@ -117,4 +117,3 @@ def insert_data(data: dict) -> bool:
             connect.rollback()
             logging.exception(f"При выполнении запроса произошла ошибка: {e}")
             return False
-

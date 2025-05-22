@@ -58,7 +58,7 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
     order_id = data.get('order_id')
     try:
         with connect.cursor() as cur:
-            cur.execute("SELECT rate_delivery(%s, %s);", (delivery_rating, order_id, ))
+            cur.execute("SELECT rate_delivery(%s, %s);", (delivery_rating, order_id,))
             connect.commit()
     except ps.Error as p:
         logging.exception(f"При выполнении запроса произошла ошибка: {p}")
@@ -87,7 +87,7 @@ async def add_review(message: Message, state: FSMContext):
     review = message.text
     try:
         with connect.cursor() as cur:
-            cur.execute(update_review, (review, order_id, ))
+            cur.execute(update_review, (review, order_id,))
             connect.commit()
     except ps.Error as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
@@ -156,9 +156,9 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
 
     with connect.cursor() as cur:
         try:
-            order_info = cur.execute(get_order_info, (order_id, )).fetchall()
+            order_info = cur.execute(get_order_info, (order_id,)).fetchall()
             if not order_info:
-                order_info = cur.execute(get_not_accept_order_info, (order_id, )).fetchall()
+                order_info = cur.execute(get_not_accept_order_info, (order_id,)).fetchall()
                 is_order_accept = False
                 # raise Warning('Курьер еще не назначен на заказ!')
         except ps.Error as e:
@@ -269,13 +269,12 @@ async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: 
     await callback.message.edit_text(text=f"{msg}\nПожалуйста оцените доставку!", reply_markup=get_rate_order_kb())
     try:
         with connect.cursor() as cur:
-            if cur.execute("SELECT confirm_receipt(%s)", (order_id, )).fecthone()[0] == 1:
+            if cur.execute("SELECT confirm_receipt(%s)", (order_id,)).fecthone()[0] == 1:
                 raise Error()
             connect.commit()
     except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
-            connect.rollback()
-
+        logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
+        connect.rollback()
 
 
 # можно оформить как транзакцию внутри постгреса или функцию
@@ -283,7 +282,7 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int
     connect: ps.connect = Database.get_connection()
     try:
         with connect.cursor() as cur:
-            if cur.execute("SELECT cancel_order(%s)", (order_id, )) == 1:
+            if cur.execute("SELECT cancel_order(%s)", (order_id,)) == 1:
                 raise Error()
             await callback.answer("Заказ успешно удален..", show_alert=True)
             connect.commit()
@@ -307,8 +306,8 @@ async def send_notify(order_id: int, notify_type: str):
     ))
     try:
         with connect.cursor() as cur:
-            client_id = cur.execute(get_client_id, (order_id, )).fetchone()[0]
-            tgchat_id = cur.execute(get_user_tgchat_id, (client_id, )).fetchone()[0]
+            client_id = cur.execute(get_client_id, (order_id,)).fetchone()[0]
+            tgchat_id = cur.execute(get_user_tgchat_id, (client_id,)).fetchone()[0]
     except ps.Error as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
 
@@ -383,13 +382,13 @@ ORDER BY
     ))
     try:
         with connect.cursor() as cur:
-            user_id = cur.execute(get_user_id, (user_tgchat_id, )).fetchone()[0]
-            user_nickname = cur.execute(get_user_nickname, (user_id, )).fetchone()[0]
-            client_id = cur.execute(get_client_id, (user_id, )).fetchone()[0]
-            order_count = cur.execute(get_order_count, (client_id, )).fetchone()[0]
-            order_total_amount = cur.execute(get_order_total_amount, (client_id, )).fetchone()[0]
-            most_ordered_category = cur.execute(get_most_ordered_category, (user_id, )).fetchall()
-            register_date = cur.execute(get_user_register_date, (user_id, )).fetchone()[0]
+            user_id = cur.execute(get_user_id, (user_tgchat_id,)).fetchone()[0]
+            user_nickname = cur.execute(get_user_nickname, (user_id,)).fetchone()[0]
+            client_id = cur.execute(get_client_id, (user_id,)).fetchone()[0]
+            order_count = cur.execute(get_order_count, (client_id,)).fetchone()[0]
+            order_total_amount = cur.execute(get_order_total_amount, (client_id,)).fetchone()[0]
+            most_ordered_category = cur.execute(get_most_ordered_category, (user_id,)).fetchall()
+            register_date = cur.execute(get_user_register_date, (user_id,)).fetchone()[0]
             connect.commit()
     except ps.Error as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")

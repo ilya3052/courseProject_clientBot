@@ -13,10 +13,10 @@ from psycopg import sql
 
 from Filters.IsRegistered import IsRegistered
 from core.database import Database
-from .register import cmd_start
 from keyboards import get_categories_kb
 from keyboards import get_product_info_kb
 from keyboards import get_products_list_kb
+from .register import cmd_start
 
 router = Router()
 
@@ -55,7 +55,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
     ))
     with connect.cursor() as cur:
         try:
-            products = cur.execute(select_products, (callback.data.split("_")[1], )).fetchall()
+            products = cur.execute(select_products, (callback.data.split("_")[1],)).fetchall()
             await state.update_data(
                 products_list=products,
                 product_page=0,
@@ -159,7 +159,7 @@ async def get_product(callback: CallbackQuery, state: FSMContext):
     with connect.cursor() as cur:
         try:
             data = await state.get_data()
-            articles = cur.execute(select_products, (data['category'], )).fetchall()
+            articles = cur.execute(select_products, (data['category'],)).fetchall()
             articles = [str(item[0]) for item in articles]
             await state.update_data(articles=articles)
             await callback.message.delete()
@@ -185,7 +185,7 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
 
     try:
         with connect.cursor() as cur:
-            product_info = cur.execute(select_product_info, (current_article, )).fetchone()
+            product_info = cur.execute(select_product_info, (current_article,)).fetchone()
             description = f"{product_info[1]}\nСтоимость товара: {product_info[0]}"
             await state.update_data(product_description=description)
     except ps.Error as e:
@@ -274,23 +274,24 @@ async def address_input(message: Message, state: FSMContext):
     await state.update_data(address=address)
     await confirm_order(message, state)
     await message.answer("Заказ создан, подождите назначения курьера!",
-                                  reply_markup=InlineKeyboardMarkup(
-                                      inline_keyboard=[
-                                          [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
-                                      ]
-                                  )
-                                  )
+                         reply_markup=InlineKeyboardMarkup(
+                             inline_keyboard=[
+                                 [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
+                             ]
+                         )
+                         )
 
     await Database.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
     await state.clear()
     await state.set_state(None)
+
 
 async def create_order(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     address = (await state.get_data()).get('address')
     try:
         with connect.cursor() as cur:
-            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address, )).fetchone()[0]
+            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address,)).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
     except ps.Error as e:
@@ -352,6 +353,7 @@ async def count_change(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(StateFilter(None))
 async def handle_no_action(callback: CallbackQuery):
     await callback.answer()
+
 
 @router.message(~IsRegistered())
 @router.callback_query(~IsRegistered())

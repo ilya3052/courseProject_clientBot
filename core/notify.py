@@ -1,5 +1,5 @@
-from .database import Database
 from handlers import get_notify
+from .database import Database
 
 
 async def setup_notifications():

@@ -1,7 +1,7 @@
 import logging
 
-from .bot_instance import bot, dp
 from handlers import catalog_router, reg_router, profile_router
+from .bot_instance import bot, dp
 
 
 async def setup_bot():
