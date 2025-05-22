@@ -55,7 +55,7 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
     ))
     with connect.cursor() as cur:
         try:
-            products = cur.execute(select_products, (callback.data.split("_")[1])).fetchall()
+            products = cur.execute(select_products, (callback.data.split("_")[1], )).fetchall()
             await state.update_data(
                 products_list=products,
                 product_page=0,
@@ -159,7 +159,7 @@ async def get_product(callback: CallbackQuery, state: FSMContext):
     with connect.cursor() as cur:
         try:
             data = await state.get_data()
-            articles = cur.execute(select_products, (data['category'])).fetchall()
+            articles = cur.execute(select_products, (data['category'], )).fetchall()
             articles = [str(item[0]) for item in articles]
             await state.update_data(articles=articles)
             await callback.message.delete()
@@ -185,7 +185,7 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
 
     try:
         with connect.cursor() as cur:
-            product_info = cur.execute(select_product_info, current_article).fetchone()
+            product_info = cur.execute(select_product_info, (current_article, )).fetchone()
             description = f"{product_info[1]}\nСтоимость товара: {product_info[0]}"
             await state.update_data(product_description=description)
     except ps.Error as e:
@@ -237,12 +237,12 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
             )
             await callback.message.edit_reply_markup(reply_markup=get_product_info_kb(True))
         case "next":
-            new_index = (current_index + 1) % len(articles)  # Циклический переход
+            new_index = (current_index + 1) % len(articles)
             new_article = articles[new_index]
             await state.update_data(current_article=new_article)
             await show_product(callback, state, False)
         case "previous":
-            new_index = (current_index - 1) % len(articles)  # Циклический переход
+            new_index = (current_index - 1) % len(articles)
             new_article = articles[new_index]
             await state.update_data(current_article=new_article)
             await show_product(callback, state, False)
@@ -287,10 +287,10 @@ async def address_input(message: Message, state: FSMContext):
 
 async def create_order(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
-    address = str((await state.get_data()).get('address'))
+    address = (await state.get_data()).get('address')
     try:
         with connect.cursor() as cur:
-            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address)).fetchone()[0]
+            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address, )).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
     except ps.Error as e:
