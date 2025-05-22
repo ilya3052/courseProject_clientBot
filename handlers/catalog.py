@@ -51,11 +51,11 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     category = callback.data.split("_")[1]
     select_products = (sql.SQL(
-        """SELECT product_article, product_name FROM product WHERE product_category = {}"""
+        """SELECT product_article, product_name FROM product WHERE product_category = %s"""
     ))
     with connect.cursor() as cur:
         try:
-            products = cur.execute(select_products.format(callback.data.split("_")[1])).fetchall()
+            products = cur.execute(select_products, (callback.data.split("_")[1])).fetchall()
             await state.update_data(
                 products_list=products,
                 product_page=0,
@@ -154,12 +154,12 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
 async def get_product(callback: CallbackQuery, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_products = (sql.SQL(
-        """SELECT product_article FROM product WHERE product_category = {}"""
+        """SELECT product_article FROM product WHERE product_category = %s"""
     ))
     with connect.cursor() as cur:
         try:
             data = await state.get_data()
-            articles = cur.execute(select_products.format(data['category'])).fetchall()
+            articles = cur.execute(select_products, (data['category'])).fetchall()
             articles = [str(item[0]) for item in articles]
             await state.update_data(articles=articles)
             await callback.message.delete()
@@ -180,12 +180,12 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
 
     connect: ps.connect = Database.get_connection()
     select_product_info = sql.SQL(
-        """SELECT product_price, product_description FROM product WHERE product_article = {}"""
+        """SELECT product_price, product_description FROM product WHERE product_article = %s"""
     )
 
     try:
         with connect.cursor() as cur:
-            product_info = cur.execute(select_product_info.format(current_article)).fetchone()
+            product_info = cur.execute(select_product_info, current_article).fetchone()
             description = f"{product_info[1]}\nСтоимость товара: {product_info[0]}"
             await state.update_data(product_description=description)
     except ps.Error as e:
@@ -223,7 +223,6 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product), IsRegistered())
 async def product_action(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     current_article = data['current_article']
     articles = data['articles']
@@ -288,22 +287,15 @@ async def address_input(message: Message, state: FSMContext):
 
 async def create_order(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
-    select_client_id = (sql.SQL(
-        "SELECT client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_tgchat_id = {} AND u.user_role = 'user';"
-    ))
-    get_new_order_id = (sql.SQL(
-        "INSERT INTO \"order\" (client_id, order_address) VALUES ({}, {}) RETURNING order_id;"
-    ))
-    address = (await state.get_data()).get('address')
-    with connect.cursor() as cur:
-        try:
-            client_id = cur.execute(select_client_id.format(message.chat.id)).fetchone()[0]
-            order_id = cur.execute(get_new_order_id.format(client_id, address)).fetchone()[0]
+    address = str((await state.get_data()).get('address'))
+    try:
+        with connect.cursor() as cur:
+            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address)).fetchone()[0]
             await state.update_data(order_id=order_id)
             connect.commit()
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-            connect.rollback()
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+        connect.rollback()
 
 
 async def add_products(state: FSMContext):

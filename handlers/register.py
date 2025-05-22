@@ -26,11 +26,11 @@ async def cmd_start(message: Message, state: FSMContext):
     select_nickname = (sql.SQL(
         """SELECT c.client_nickname 
         FROM users u JOIN client c ON u.user_id = c.user_id 
-        WHERE u.user_tgchat_id = {};"""
+        WHERE u.user_tgchat_id = %s;"""
     ))
     with connect.cursor() as cur:
         try:
-            nickname = cur.execute(select_nickname.format(message.chat.id)).fetchone()
+            nickname = cur.execute(select_nickname, message.chat.id).fetchone()
             connect.commit()
             logging.info("Запрос выполнен")
         except ps.Error as e:
@@ -93,18 +93,18 @@ def insert_data(data: dict) -> bool:
     insert_user = (sql.SQL(
         """INSERT INTO users 
             (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber) 
-            VALUES ({}, {}, {}, {}, {}, {}) RETURNING user_id;"""
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING user_id;"""
     ))
     insert_client = (sql.SQL(
-        "INSERT INTO client (user_id, client_nickname) VALUES ({}, {});"
+        "INSERT INTO client (user_id, client_nickname) VALUES (%s, %s);"
     ))
     with connect.cursor() as cur:
         try:
             user_id = cur.execute(
-                insert_user.format(data['tgchat_id'], data['fullname'][1], data['fullname'][0],
+                insert_user, (data['tgchat_id'], data['fullname'][1], data['fullname'][0],
                                    data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
                                    data['phonenumber'])).fetchone()[0]
-            cur.execute(insert_client.format(
+            cur.execute(insert_client, (
                 user_id, data['nickname']
             ))
             connect.commit()

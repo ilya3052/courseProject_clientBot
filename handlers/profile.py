@@ -58,28 +58,28 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
     delivery_rating = int(callback.data.split("_")[1])
     order_id = data.get('order_id')
 
-    update_delivery_rating = sql.SQL("UPDATE delivery SET delivery_rating = {} WHERE order_id = {};")
+    update_delivery_rating = sql.SQL("UPDATE delivery SET delivery_rating = %s WHERE order_id = %s;")
 
-    get_courier_id = sql.SQL("SELECT courier_id FROM delivery WHERE order_id = {};")
-    get_courier_rating = sql.SQL("SELECT courier_rating FROM courier WHERE courier_id = {};")
+    get_courier_id = sql.SQL("SELECT courier_id FROM delivery WHERE order_id = %s;")
+    get_courier_rating = sql.SQL("SELECT courier_rating FROM courier WHERE courier_id = %s;")
     get_count_courier_orders = sql.SQL("""SELECT COUNT(*) 
     FROM delivery d 
     JOIN \"order\" o 
     ON d.order_id = o.order_id 
-    WHERE d.courier_id = {} AND o.order_status = 2;""")
+    WHERE d.courier_id = %s AND o.order_status = 2;""")
 
-    update_courier_rating = sql.SQL("UPDATE courier SET courier_rating = {} WHERE courier_id = {};")
+    update_courier_rating = sql.SQL("UPDATE courier SET courier_rating = %s WHERE courier_id = %s;")
 
     with connect.cursor() as cur:
         try:
-            cur.execute(update_delivery_rating.format(delivery_rating, order_id))
+            cur.execute(update_delivery_rating, (delivery_rating, order_id))
 
-            courier_id = cur.execute(get_courier_id.format(order_id)).fetchone()[0]
-            courier_rating = cur.execute(get_courier_rating.format(courier_id)).fetchone()[0]
-            count_courier_orders = cur.execute(get_count_courier_orders.format(courier_id)).fetchone()[0]
+            courier_id = cur.execute(get_courier_id, order_id).fetchone()[0]
+            courier_rating = cur.execute(get_courier_rating, courier_id).fetchone()[0]
+            count_courier_orders = cur.execute(get_count_courier_orders, courier_id).fetchone()[0]
 
             new_courier_rating = (count_courier_orders * courier_rating + delivery_rating) / (count_courier_orders + 1)
-            cur.execute(update_courier_rating.format(round(new_courier_rating, 2), courier_id))
+            cur.execute(update_courier_rating, (round(new_courier_rating, 2), courier_id))
 
             connect.commit()
         except ps.Error as p:
@@ -104,12 +104,12 @@ async def add_review(message: Message, state: FSMContext):
     order_id = data.get('order_id')
     delivery_rating = data.get('delivery_rating')
     update_review = (sql.SQL(
-        "UPDATE \"order\" SET order_review = {} WHERE order_id = {}"
+        "UPDATE \"order\" SET order_review = %s WHERE order_id = %s"
     ))
     review = message.text
     try:
         with connect.cursor() as cur:
-            cur.execute(update_review.format(review, order_id))
+            cur.execute(update_review, (review, order_id))
             connect.commit()
     except ps.Error as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
@@ -161,7 +161,7 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
         JOIN delivery d ON o.order_id = d.order_id
         JOIN courier c ON d.courier_id = c.courier_id
         JOIN users u ON c.user_id = u.user_id
-    WHERE o.order_id = {}
+    WHERE o.order_id = %s
     GROUP BY o.order_id, u.user_surname, u.user_name, p.product_article, u.user_phonenumber;"""
     ))
 
@@ -170,7 +170,7 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
-    WHERE o.order_id = {}
+    WHERE o.order_id = %s
     GROUP BY o.order_id, p.product_article;"""
     ))
 
@@ -178,9 +178,9 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
 
     with connect.cursor() as cur:
         try:
-            order_info = cur.execute(get_order_info.format(order_id)).fetchall()
+            order_info = cur.execute(get_order_info, order_id).fetchall()
             if not order_info:
-                order_info = cur.execute(get_not_accept_order_info.format(order_id)).fetchall()
+                order_info = cur.execute(get_not_accept_order_info, order_id).fetchall()
                 is_order_accept = False
                 # raise Warning('Курьер еще не назначен на заказ!')
         except ps.Error as e:
@@ -288,21 +288,21 @@ async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: 
     data = await state.get_data()
     msg = data.get('msg')
     update_status = (sql.SQL(
-        "UPDATE \"order\" SET order_status = 2 WHERE order_id = {};"
+        "UPDATE \"order\" SET order_status = 2 WHERE order_id = %s;"
     ))
     get_courier_id = (sql.SQL(
-        "SELECT c.courier_id FROM courier c JOIN delivery d ON d.courier_id = c.courier_id WHERE d.order_id = {};"
+        "SELECT c.courier_id FROM courier c JOIN delivery d ON d.courier_id = c.courier_id WHERE d.order_id = %s;"
     ))
 
     update_courier_status = (sql.SQL(
-        "UPDATE courier SET courier_is_busy_with_order = false WHERE courier_id = {};"
+        "UPDATE courier SET courier_is_busy_with_order = false WHERE courier_id = %s;"
     ))
     await callback.message.edit_text(text=f"{msg}\nПожалуйста оцените доставку!", reply_markup=get_rate_order_kb())
     with connect.cursor() as cur:
         try:
-            cur.execute(update_status.format(order_id))
-            courier_id = cur.execute(get_courier_id.format(order_id)).fetchone()[0]
-            cur.execute(update_courier_status.format(courier_id))
+            cur.execute(update_status, order_id)
+            courier_id = cur.execute(get_courier_id, order_id).fetchone()[0]
+            cur.execute(update_courier_status, courier_id)
             connect.commit()
         except ps.Error as e:
             logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
@@ -315,8 +315,8 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int
     try:
         with connect.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM \"order\" WHERE order_id = {} FOR UPDATE NOWAIT".format(order_id)).fetchone()
-            cur.execute("DELETE FROM \"order\" WHERE order_id = {}".format(order_id))
+                "SELECT 1 FROM \"order\" WHERE order_id = %s FOR UPDATE NOWAIT", order_id).fetchone()
+            cur.execute("DELETE FROM \"order\" WHERE order_id = %s", order_id)
 
             await callback.answer("Заказ успешно удален..", show_alert=True)
             connect.commit()
@@ -332,15 +332,15 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int
 async def send_notify(order_id: int, notify_type: str):
     connect: ps.connect = Database.get_connection()
     get_client_id = (sql.SQL(
-        "SELECT client_id FROM \"order\" WHERE order_id = {};"
+        "SELECT client_id FROM \"order\" WHERE order_id = %s;"
     ))
     get_user_tgchat_id = (sql.SQL(
-        "SELECT u.user_tgchat_id FROM users u JOIN client c ON u.user_id = c.user_id WHERE c.client_id = {};"
+        "SELECT u.user_tgchat_id FROM users u JOIN client c ON u.user_id = c.user_id WHERE c.client_id = %s;"
     ))
     try:
         with connect.cursor() as cur:
-            client_id = cur.execute(get_client_id.format(order_id)).fetchone()[0]
-            tgchat_id = cur.execute(get_user_tgchat_id.format(client_id)).fetchone()[0]
+            client_id = cur.execute(get_client_id, order_id).fetchone()[0]
+            tgchat_id = cur.execute(get_user_tgchat_id, client_id).fetchone()[0]
     except ps.Error as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
 
@@ -356,22 +356,22 @@ async def send_notify(order_id: int, notify_type: str):
 async def get_user_info(user_tgchat_id: int, state: FSMContext) -> str | None:
     connect: ps.connect = Database.get_connection()
     get_user_id = (sql.SQL(
-        "SELECT user_id FROM users WHERE user_tgchat_id = {} AND user_role = 'user';"
+        "SELECT user_id FROM users WHERE user_tgchat_id = %s AND user_role = 'user';"
     ))
     get_user_nickname = (sql.SQL(
-        "SELECT c.client_nickname FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = {};"
+        "SELECT c.client_nickname FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = %s;"
     ))
     get_client_id = (sql.SQL(
-        "SELECT c.client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = {};"
+        "SELECT c.client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = %s;"
     ))
     get_order_count = (sql.SQL(
-        "SELECT COUNT(*) FROM \"order\" WHERE client_id = {};"
+        "SELECT COUNT(*) FROM \"order\" WHERE client_id = %s;"
     ))
     get_order_total_amount = (sql.SQL(
         """SELECT SUM(p.product_price) FROM product p 
         JOIN added a on a.product_article = p.product_article 
         JOIN \"order\" o on o.order_id = a.order_id 
-        WHERE o.client_id = {};"""
+        WHERE o.client_id = %s;"""
     ))
     get_most_ordered_category = (sql.SQL(
         """WITH user_category_stats AS (
@@ -389,7 +389,7 @@ async def get_user_info(user_tgchat_id: int, state: FSMContext) -> str | None:
     JOIN 
         product p ON a.product_article = p.product_article
     WHERE 
-        u.user_id = {}
+        u.user_id = %s
     GROUP BY 
         p.product_category
 ),
@@ -411,17 +411,17 @@ ORDER BY
         """
     ))
     get_user_register_date = (sql.SQL(
-        "SELECT client_registerdate FROM client WHERE user_id = {};"
+        "SELECT client_registerdate FROM client WHERE user_id = %s;"
     ))
     with connect.cursor() as cur:
         try:
-            user_id = cur.execute(get_user_id.format(user_tgchat_id)).fetchone()[0]
-            user_nickname = cur.execute(get_user_nickname.format(user_id)).fetchone()[0]
-            client_id = cur.execute(get_client_id.format(user_id)).fetchone()[0]
-            order_count = cur.execute(get_order_count.format(client_id)).fetchone()[0]
-            order_total_amount = cur.execute(get_order_total_amount.format(client_id)).fetchone()[0]
-            most_ordered_category = cur.execute(get_most_ordered_category.format(user_id)).fetchall()
-            register_date = cur.execute(get_user_register_date.format(user_id)).fetchone()[0]
+            user_id = cur.execute(get_user_id, user_tgchat_id).fetchone()[0]
+            user_nickname = cur.execute(get_user_nickname, user_id).fetchone()[0]
+            client_id = cur.execute(get_client_id, user_id).fetchone()[0]
+            order_count = cur.execute(get_order_count, client_id).fetchone()[0]
+            order_total_amount = cur.execute(get_order_total_amount, client_id).fetchone()[0]
+            most_ordered_category = cur.execute(get_most_ordered_category, user_id).fetchall()
+            register_date = cur.execute(get_user_register_date, user_id).fetchone()[0]
             connect.commit()
         except ps.Error as e:
             logging.exception(f"Произошла ошибка при выполнении запроса {e}")
