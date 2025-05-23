@@ -1,3 +1,5 @@
+import logging
+
 from aiogram.filters import BaseFilter
 from aiogram.types import Message
 
@@ -10,6 +12,5 @@ class IsRegistered(BaseFilter):
             user_id = message.from_user.id
             return await Database.is_user_registered(user_id)
         except Exception as e:
-            # Например, база недоступна
-            print(f"DB error in IsRegistered filter: {e}")
+            logging.exception(f"Ошибка базы данных в фильтре: {e}")
             return False

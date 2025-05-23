@@ -28,14 +28,15 @@ async def cmd_start(message: Message, state: FSMContext):
         FROM users u JOIN client c ON u.user_id = c.user_id 
         WHERE u.user_tgchat_id = %s;"""
     ))
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             nickname = cur.execute(select_nickname, message.chat.id).fetchone()
             connect.commit()
             logging.info("Запрос выполнен")
-        except ps.Error as e:
-            connect.rollback()
-            logging.critical(f"Запрос не выполнен. {e}")
+    except ps.Error as e:
+        connect.rollback()
+        logging.critical(f"Запрос не выполнен. {e}")
+
     if nickname is None:
         await message.answer(
             "Добрый день! Похоже, вы не зарегистрированы в системе, давайте пройдем быструю регистрацию.\n"
@@ -74,7 +75,7 @@ async def enter_phonenumber(message: Message, state: FSMContext):
         await state.update_data(phonenumber=message.text)
         data = await state.get_data()
         await state.clear()
-        if insert_data(data):
+        if await insert_data(data):
             await message.answer(f"Регистрация завершена. Добро пожаловать, {data['nickname']}")
             logging.info("Регистрация завершена")
         else:
@@ -84,7 +85,7 @@ async def enter_phonenumber(message: Message, state: FSMContext):
         await message.answer("Неправильный формат ввода, попробуйте еще раз!")
 
 
-def insert_data(data: dict) -> bool:
+async def insert_data(data: dict) -> bool:
     connect: ps.connect = Database.get_connection()
     data['phonenumber'] = (data['phonenumber'].replace('(', '')
                            .replace(')', '')
@@ -98,8 +99,8 @@ def insert_data(data: dict) -> bool:
     insert_client = (sql.SQL(
         "INSERT INTO client (user_id, client_nickname) VALUES (%s, %s);"
     ))
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             user_id = cur.execute(
                 insert_user, (data['tgchat_id'], data['fullname'][1], data['fullname'][0],
                               data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
@@ -110,10 +111,10 @@ def insert_data(data: dict) -> bool:
             connect.commit()
             logging.info("Запрос выполнен")
             return True
-        except ps.Error as e:
-            connect.rollback()
-            logging.critical(f"Запрос не выполнен. {e}")
-        except Exception as e:
-            connect.rollback()
-            logging.exception(f"При выполнении запроса произошла ошибка: {e}")
-            return False
+    except ps.Error as e:
+        connect.rollback()
+        logging.critical(f"Запрос не выполнен. {e}")
+    except Exception as e:
+        connect.rollback()
+        logging.exception(f"При выполнении запроса произошла ошибка: {e}")
+        return False

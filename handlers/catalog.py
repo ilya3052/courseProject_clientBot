@@ -34,16 +34,16 @@ class Catalog(StatesGroup):
 async def cmd_catalog(message: Message, state: FSMContext):
     connect: ps.connect = Database.get_connection()
     select_categories = """SELECT DISTINCT product_category FROM product"""
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             categories_list = cur.execute(select_categories).fetchall()
             await state.update_data(
                 categories_list=categories_list,
                 category_page=0,
             )
             await show_categories(state, message=message)
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
 @router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category), IsRegistered())
@@ -53,8 +53,8 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
     select_products = (sql.SQL(
         """SELECT product_article, product_name FROM product WHERE product_category = %s"""
     ))
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             products = cur.execute(select_products, (callback.data.split("_")[1],)).fetchall()
             await state.update_data(
                 products_list=products,
@@ -62,8 +62,8 @@ async def get_category(callback: CallbackQuery, state: FSMContext):
                 category=category
             )
             await show_products(callback, state)
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_category), IsRegistered())
@@ -108,6 +108,132 @@ async def product_list_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products), IsRegistered())
+async def get_product(callback: CallbackQuery, state: FSMContext):
+    connect: ps.connect = Database.get_connection()
+    select_products = (sql.SQL(
+        """SELECT product_article FROM product WHERE product_category = %s"""
+    ))
+    try:
+        with connect.cursor() as cur:
+            data = await state.get_data()
+            articles = cur.execute(select_products, (data['category'],)).fetchall()
+            articles = [str(item[0]) for item in articles]
+            await state.update_data(articles=articles)
+            await callback.message.delete()
+            await state.set_state(Catalog.select_product)
+
+            await state.update_data(current_article=callback.data.split("_")[1])
+            await show_product(callback, state, True)
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+    await callback.answer(show_alert=False)
+
+
+@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product), IsRegistered())
+async def product_action(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_article = data['current_article']
+    articles = data['articles']
+    current_index = articles.index(current_article)
+    match callback.data.split("_")[1]:
+        case "addToCart":
+            cart = data.get('cart', {})
+            cart[current_article] = cart.get(current_article, 0) + 1
+            await state.update_data(cart=cart)
+            await callback.message.edit_caption(
+                caption=f"{callback.message.caption}\nКоличество товаров в корзине: {cart[current_article]}",
+            )
+            await callback.message.edit_reply_markup(reply_markup=get_product_info_kb(True))
+        case "next":
+            new_index = (current_index + 1) % len(articles)
+            new_article = articles[new_index]
+            await state.update_data(current_article=new_article)
+            await show_product(callback, state, False)
+        case "previous":
+            new_index = (current_index - 1) % len(articles)
+            new_article = articles[new_index]
+            await state.update_data(current_article=new_article)
+            await show_product(callback, state, False)
+        case "back":
+            await state.set_state(Catalog.show_products)
+            await show_products(callback, state)
+        case "confirm":
+            await callback.message.delete()
+            await callback.message.answer("Пожалуйста укажите адрес доставки!")
+            order_id = (await state.get_data()).get('order_id')
+            await state.set_state(Catalog.create_order)
+            await state.update_data(order_id=order_id)
+        case "cancel":
+            await callback.message.delete()
+            await state.clear()
+            await state.set_state(None)
+    await callback.answer()
+
+
+@router.message(F.text, StateFilter(Catalog.create_order))
+async def address_input(message: Message, state: FSMContext):
+    address = message.text
+    await state.update_data(address=address)
+    await confirm_order(message, state)
+    await message.answer("Заказ создан, подождите назначения курьера!",
+                         reply_markup=InlineKeyboardMarkup(
+                             inline_keyboard=[
+                                 [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
+                             ]
+                         )
+                         )
+
+    await Database.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
+    await state.clear()
+    await state.set_state(None)
+
+
+@router.callback_query(F.data.startswith("count_"), StateFilter(Catalog.select_product), IsRegistered())
+async def count_change(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    image = data['current_image_path']
+    product_info = data['product_description']
+    current_article = data.get('current_article')
+    cart = data.get('cart', {})
+    count = cart.get(current_article, 1)
+
+    try:
+        match callback.data.split("_")[1]:
+            case "inc":
+                count += 1
+                cart[current_article] = count
+            case "dec":
+                count = max(0, count - 1)
+                if count:
+                    cart[current_article] = count
+                else:
+                    cart.pop(current_article, None)
+        await state.update_data(cart=cart)
+        caption = product_info if count == 0 else f"{product_info}\nКоличество товаров в корзине: {count}"
+        keyboard = get_product_info_kb(bool(count))
+        await callback.message.edit_media(
+            InputMediaPhoto(media=image, caption=caption),
+            reply_markup=keyboard,
+        )
+    except TelegramBadRequest as TBR:
+        logging.debug(f"Поймано некритичное исключение при попытке отредактировать сообщение {TBR}")
+
+    await callback.answer()
+
+
+@router.callback_query(StateFilter(None))
+async def handle_no_action(callback: CallbackQuery):
+    await callback.answer()
+
+
+@router.message(~IsRegistered())
+@router.callback_query(~IsRegistered())
+async def reg_handler(update: Message | CallbackQuery, state: FSMContext):
+    message = update.message if isinstance(update, CallbackQuery) else update
+    await cmd_start(message, state)
+
+
 async def show_categories(state: FSMContext, callback: CallbackQuery = None, message: Message = None):
     data = await state.get_data()
     page = data['category_page']
@@ -140,7 +266,7 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(Catalog.show_products)
     except TelegramBadRequest as TBR:
-        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
+        logging.debug(f"Поймано некритичное исключение при попытке отредактировать сообщение {TBR}")
         loading_msg = await callback.message.answer("⌛ Загружаем товары...")
         await callback.message.delete()
         await loading_msg.edit_text(
@@ -148,28 +274,6 @@ async def show_products(callback: CallbackQuery, state: FSMContext):
             reply_markup=get_products_list_kb(products[page_size * page:page_size * (page + 1)])
         )
         await state.set_state(Catalog.show_products)
-
-
-@router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products), IsRegistered())
-async def get_product(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
-    select_products = (sql.SQL(
-        """SELECT product_article FROM product WHERE product_category = %s"""
-    ))
-    with connect.cursor() as cur:
-        try:
-            data = await state.get_data()
-            articles = cur.execute(select_products, (data['category'],)).fetchall()
-            articles = [str(item[0]) for item in articles]
-            await state.update_data(articles=articles)
-            await callback.message.delete()
-            await state.set_state(Catalog.select_product)
-
-            await state.update_data(current_article=callback.data.split("_")[1])
-            await show_product(callback, state, True)
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-    await callback.answer(show_alert=False)
 
 
 async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: bool):
@@ -217,73 +321,13 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
                 reply_markup=keyboard,
             )
     except TelegramBadRequest as TBR:
-        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
+        logging.debug(f"Поймано некритичное исключение при попытке отредактировать сообщение {TBR}")
         await callback.answer()
-
-
-@router.callback_query(F.data.startswith("action_"), StateFilter(Catalog.select_product), IsRegistered())
-async def product_action(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    current_article = data['current_article']
-    articles = data['articles']
-    current_index = articles.index(current_article)
-    match callback.data.split("_")[1]:
-        case "addToCart":
-            cart = data.get('cart', {})
-            cart[current_article] = cart.get(current_article, 0) + 1
-            await state.update_data(cart=cart)
-            await callback.message.edit_caption(
-                caption=f"{callback.message.caption}\nКоличество товаров в корзине: {cart[current_article]}",
-            )
-            await callback.message.edit_reply_markup(reply_markup=get_product_info_kb(True))
-        case "next":
-            new_index = (current_index + 1) % len(articles)
-            new_article = articles[new_index]
-            await state.update_data(current_article=new_article)
-            await show_product(callback, state, False)
-        case "previous":
-            new_index = (current_index - 1) % len(articles)
-            new_article = articles[new_index]
-            await state.update_data(current_article=new_article)
-            await show_product(callback, state, False)
-        case "back":
-            await state.set_state(Catalog.show_products)
-            await show_products(callback, state)
-        case "confirm":
-            await callback.message.delete()
-            await callback.message.answer("Пожалуйста укажите адрес доставки!")
-            order_id = (await state.get_data()).get('order_id')
-            await state.set_state(Catalog.create_order)
-            await state.update_data(order_id=order_id)
-        case "cancel":
-            # переход в профиль
-            await callback.message.delete()
-            await state.clear()
-            await state.set_state(None)
-    await callback.answer()
 
 
 async def confirm_order(message: Message, state: FSMContext):
     await create_order(message, state)
     await add_products(state)
-
-
-@router.message(F.text, StateFilter(Catalog.create_order))
-async def address_input(message: Message, state: FSMContext):
-    address = message.text
-    await state.update_data(address=address)
-    await confirm_order(message, state)
-    await message.answer("Заказ создан, подождите назначения курьера!",
-                         reply_markup=InlineKeyboardMarkup(
-                             inline_keyboard=[
-                                 [InlineKeyboardButton(text="Вернуться в профиль ↩️", callback_data="profile")]
-                             ]
-                         )
-                         )
-
-    await Database.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
-    await state.clear()
-    await state.set_state(None)
 
 
 async def create_order(message: Message, state: FSMContext):
@@ -308,55 +352,10 @@ async def add_products(state: FSMContext):
         "INSERT INTO added (order_id, product_article) VALUES (%s, %s)"
     ))
     connect: ps.connect = Database.get_connection()
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             cur.executemany(insert_product, products_list)
             connect.commit()
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-            connect.rollback()
-
-
-@router.callback_query(F.data.startswith("count_"), StateFilter(Catalog.select_product), IsRegistered())
-async def count_change(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    image = data['current_image_path']
-    product_info = data['product_description']
-    current_article = data.get('current_article')
-    cart = data.get('cart', {})
-    count = cart.get(current_article, 1)
-
-    try:
-        match callback.data.split("_")[1]:
-            case "inc":
-                count += 1
-                cart[current_article] = count
-            case "dec":
-                count = max(0, count - 1)
-                if count:
-                    cart[current_article] = count
-                else:
-                    cart.pop(current_article, None)
-        await state.update_data(cart=cart)
-        caption = product_info if count == 0 else f"{product_info}\nКоличество товаров в корзине: {count}"
-        keyboard = get_product_info_kb(bool(count))
-        await callback.message.edit_media(
-            InputMediaPhoto(media=image, caption=caption),
-            reply_markup=keyboard,
-        )
-    except TelegramBadRequest as TBR:
-        logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
-
-    await callback.answer()
-
-
-@router.callback_query(StateFilter(None))
-async def handle_no_action(callback: CallbackQuery):
-    await callback.answer()
-
-
-@router.message(~IsRegistered())
-@router.callback_query(~IsRegistered())
-async def reg_handler(update: Message | CallbackQuery, state: FSMContext):
-    message = update.message if isinstance(update, CallbackQuery) else update
-    await cmd_start(message, state)
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+        connect.rollback()

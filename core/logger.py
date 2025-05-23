@@ -5,7 +5,6 @@ import os
 def setup_logger():
     log_path = os.path.join(os.path.dirname(__file__), "../logs/client_bot_logs.log")
 
-    # Настройка логирования
     logging.basicConfig(
         level=logging.INFO,
         filename=log_path,

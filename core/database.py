@@ -55,8 +55,8 @@ class Database:
 
     @staticmethod
     async def notify_channel(channel_name: str, payload: str):
-        conn = await Database.get_async_connection()  # безопасно экранирует строку
-        payload_escaped = payload.replace("'", "''")  # экранируем одинарные кавычки
+        conn = await Database.get_async_connection()
+        payload_escaped = payload.replace("'", "''")
         sql = f"NOTIFY {channel_name}, '{payload_escaped}';"
 
         await conn.execute(sql)

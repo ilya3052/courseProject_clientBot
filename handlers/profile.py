@@ -98,7 +98,6 @@ async def add_review(message: Message, state: FSMContext):
               "Спасибо за обратную связь, мы уже принимаем меры по улучшению качества работы!")
     await message.answer(answer)
     await state.set_state(None)
-    # await show_order(callback, state)
 
 
 @router.callback_query(F.data.startswith("action_"), StateFilter(Profile.show_orders), IsRegistered())
@@ -154,21 +153,19 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
 
     is_order_accept = True
 
-    with connect.cursor() as cur:
-        try:
+    try:
+        with connect.cursor() as cur:
             order_info = cur.execute(get_order_info, (order_id,)).fetchall()
             if not order_info:
                 order_info = cur.execute(get_not_accept_order_info, (order_id,)).fetchall()
                 is_order_accept = False
-                # raise Warning('Курьер еще не назначен на заказ!')
-        except ps.Error as e:
-            logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-            await callback.answer()
-            return
-        # except Warning as wr:
-        # await callback.answer(str(wr), True)
-        # return
+    except ps.Error as e:
+        logging.exception(f"Произошла ошибка при выполнении запроса {e}")
+        await callback.answer()
+        return
+
     ic(order_info)
+
     if is_order_accept:
         msg = generate_accepted_order_info(order_info, order_id)
     else:
@@ -217,10 +214,8 @@ async def get_orders(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     client_id = data.get('client_id')
     if client_id is None:
-        # нет client_id — ничего не показываем
         return
 
-    # получаем все order_id пользователя
     query = sql.SQL("SELECT o.order_id FROM \"order\" o WHERE o.client_id = %s;")
     connect: ps.connect = Database.get_connection()
     with connect.cursor() as cur:
@@ -232,9 +227,7 @@ async def get_orders(callback: CallbackQuery, state: FSMContext):
             connect.rollback()
             return
 
-    # сохраняем список заказов и сбрасываем страницу
     await state.update_data(orders_list=orders, orders_page=0)
-    # показываем первую «страницу»
     await show_orders(callback, state)
 
 
@@ -260,7 +253,6 @@ async def show_orders(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# можно оформить как транзакцию внутри постгреса или функцию
 async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: int):
     connect: ps.connect = Database.get_connection()
     data = await state.get_data()
@@ -277,13 +269,12 @@ async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: 
         connect.rollback()
 
 
-# можно оформить как транзакцию внутри постгреса или функцию
 async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int):
     connect: ps.connect = Database.get_connection()
     try:
         with connect.cursor() as cur:
             if cur.execute("SELECT cancel_order(%s)", (order_id,)) == 1:
-                raise Error()
+                raise LockNotAvailable()
             await callback.answer("Заказ успешно удален..", show_alert=True)
             connect.commit()
         await handle_profile_callback(callback, state)
