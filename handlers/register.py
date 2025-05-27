@@ -43,7 +43,7 @@ async def cmd_start(message: Message, state: FSMContext):
             "Укажите имя в формате ФИО (отчество при наличии)\n"
         )
         await state.set_state(Register.enter_name)
-        await state.update_data(tgchat_id=message.chat.id)
+        await state.update_data(tgchat_id=message.chat.id, username=message.from_user.username)
         logging.info("Имя введено")
     else:
         await message.answer(f"Добро пожаловать, {nickname[0]}!")
@@ -93,8 +93,8 @@ async def insert_data(data: dict) -> bool:
                            .replace('+', ''))
     insert_user = (sql.SQL(
         """INSERT INTO users 
-            (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber) 
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING user_id;"""
+            (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber, user_tg_username) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING user_id;"""
     ))
     insert_client = (sql.SQL(
         "INSERT INTO client (user_id, client_nickname) VALUES (%s, %s);"
@@ -104,7 +104,7 @@ async def insert_data(data: dict) -> bool:
             user_id = cur.execute(
                 insert_user, (data['tgchat_id'], data['fullname'][1], data['fullname'][0],
                               data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
-                              data['phonenumber'])).fetchone()[0]
+                              data['phonenumber'], data['username'])).fetchone()[0]
             cur.execute(insert_client, (
                 user_id, data['nickname']
             ))
