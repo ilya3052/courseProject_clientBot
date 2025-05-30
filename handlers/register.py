@@ -30,7 +30,7 @@ async def cmd_start(message: Message, state: FSMContext):
     ))
     try:
         with connect.cursor() as cur:
-            nickname = cur.execute(select_nickname, message.chat.id).fetchone()
+            nickname = cur.execute(select_nickname, (message.chat.id, )).fetchone()
             connect.commit()
             logging.info("Запрос выполнен")
     except ps.Error as e:
