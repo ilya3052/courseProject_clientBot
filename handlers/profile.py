@@ -64,6 +64,8 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
         logging.exception(f"При выполнении запроса произошла ошибка: {p}")
         connect.rollback()
 
+    await Database.notify_channel('rate_delivery', '')
+
     answer = ("Пожалуйста, оставьте отзыв о доставке!" if delivery_rating == 5
               else "Пожалуйста, опишите что вам не понравилось" if delivery_rating == 4
     else "Приносим извинения за доставленные неудобства, пожалуйста, опишите проблему в сообщении. Мы примем меры как можно скорее!")
@@ -261,7 +263,7 @@ async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: 
     await callback.message.edit_text(text=f"{msg}\nПожалуйста оцените доставку!", reply_markup=get_rate_order_kb())
     try:
         with connect.cursor() as cur:
-            if cur.execute("SELECT confirm_receipt(%s)", (order_id,)).fecthone()[0] == 1:
+            if cur.execute("SELECT confirm_receipt(%s)", (order_id,)).fetchone()[0] == 1:
                 raise Error()
             connect.commit()
     except ps.Error as e:
