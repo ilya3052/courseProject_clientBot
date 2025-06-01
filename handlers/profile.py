@@ -8,7 +8,6 @@ from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
-from icecream import ic
 from psycopg import sql, Error
 from psycopg.errors import LockNotAvailable
 
@@ -166,8 +165,6 @@ async def show_order(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    ic(order_info)
-
     if is_order_accept:
         msg = generate_accepted_order_info(order_info, order_id)
     else:
@@ -182,8 +179,6 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
     order_id = data.get('order_id', 1)
-    ic(order_id)
-    ic(callback.data.split("_")[1])
     match callback.data.split("_")[1]:
         case "confirmReceipt":
             await confirm_receipt(callback, state, order_id)
@@ -235,7 +230,6 @@ async def get_orders(callback: CallbackQuery, state: FSMContext):
 
 async def show_orders(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    ic(data)
 
     orders = data.get('orders_list', [])
     page = data.get('orders_page', 0)
