@@ -8,6 +8,7 @@ pip install -r requirements.txt
 mkdir logs
 
 echo @echo off > run.bat
+echo chcp 65001 >> run.bat
 echo call .venv\Scripts\activate.bat >> run.bat
 echo python main.py >> run.bat
 echo pause >> run.bat
