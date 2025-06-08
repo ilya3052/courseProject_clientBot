@@ -1,4 +1,5 @@
 @echo off
+chcp 65001
 
 python -m venv .venv
 call .venv\Scripts\activate.bat
