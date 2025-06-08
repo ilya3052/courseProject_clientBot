@@ -20,4 +20,4 @@ if not exist ".env" (
 )
 
 del .env.example
-timeout /t 1 >nul  && del "%~f0"
+del "%~f0"
