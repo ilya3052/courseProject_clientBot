@@ -12,7 +12,9 @@ echo python main.py >> run.bat
 echo pause >> run.bat
 
 if not exist ".env" (
-    copy .env.example .env 2>nul || echo Заполните .env на основе .env.example!
+    copy .env.example .env 2>nul
+    echo Заполните .env файл своими значениями!
 )
 
+del .env.example
 del "%~f0"
