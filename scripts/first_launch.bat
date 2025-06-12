@@ -7,12 +7,12 @@ pip install -r requirements.txt
 
 mkdir logs
 
-echo @echo off > run.bat
+echo @echo off > .\scripts\run.bat
 echo chcp 65001 >> run.bat
 echo echo Для завершения программы нажмите Ctrl+C >> run.bat
-echo call .venv\Scripts\activate.bat >> run.bat
-echo python main.py >> run.bat
-echo pause >> run.bat
+echo call .venv\Scripts\activate.bat >> .\scripts\run.bat
+echo python main.py >> .\scripts\run.bat
+echo pause >> .\scripts\run.bat
 
 if not exist ".env" (
     copy .env.example .env 2>nul
