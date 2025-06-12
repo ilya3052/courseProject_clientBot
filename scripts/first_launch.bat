@@ -8,8 +8,8 @@ pip install -r requirements.txt
 mkdir logs
 
 echo @echo off > .\scripts\run.bat
-echo chcp 65001 >> run.bat
-echo echo Для завершения программы нажмите Ctrl+C >> run.bat
+echo chcp 65001 >> .\scripts\run.bat
+echo echo Для завершения программы нажмите Ctrl+C >> .\scripts\run.bat
 echo call .venv\Scripts\activate.bat >> .\scripts\run.bat
 echo python main.py >> .\scripts\run.bat
 echo pause >> .\scripts\run.bat
