@@ -1,25 +1,25 @@
 import logging
 from datetime import datetime as dt
 
-import psycopg as ps
 from aiogram import Router, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
-from psycopg import sql, Error
+from asyncpg import PostgresError
+from icecream import ic
 from psycopg.errors import LockNotAvailable
 
 from Filters.IsRegistered import IsRegistered
 from core.bot_instance import bot
-from core.database import Database
+from core.database import db
 from keyboards import get_orders_list_kb, get_delivery_kb
 from keyboards import get_profile_kb, order_info_kb, get_rate_order_kb
 from .register import cmd_start
 
 router = Router()
-page_size = 3
+page_size = 6
 
 
 class Profile(StatesGroup):
@@ -51,19 +51,18 @@ async def profile_action(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("grade_"), StateFilter(Profile.show_order), IsRegistered())
 async def rate_delivery(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     delivery_rating = int(callback.data.split("_")[1])
     order_id = data.get('order_id')
     try:
-        with connect.cursor() as cur:
-            cur.execute("SELECT rate_delivery(%s, %s);", (delivery_rating, order_id,))
-            connect.commit()
-    except ps.Error as p:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                await db.execute("SELECT rate_delivery($1, $2);", delivery_rating, order_id, execute=True)
+    except PostgresError as p:
         logging.exception(f"При выполнении запроса произошла ошибка: {p}")
-        connect.rollback()
+        return
 
-    await Database.notify_channel('rate_delivery', '')
+    # await db.notify_channel('rate_delivery', '')
 
     answer = ("Пожалуйста, оставьте отзыв о доставке!" if delivery_rating == 5
               else "Пожалуйста, опишите что вам не понравилось" if delivery_rating == 4
@@ -78,22 +77,20 @@ async def rate_delivery(callback: CallbackQuery, state: FSMContext):
 
 @router.message(F.text, StateFilter(Profile.add_review))
 async def add_review(message: Message, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     order_id = data.get('order_id')
     delivery_rating = data.get('delivery_rating')
-    update_review = (sql.SQL(
-        "UPDATE \"order\" SET order_review = %s WHERE order_id = %s"
-    ))
+    update_review = "UPDATE \"order\" SET order_review = $1 WHERE order_id = $2"
+
     review = message.text
     try:
-        with connect.cursor() as cur:
-            cur.execute(update_review, (review, order_id,))
-            connect.commit()
-    except ps.Error as p:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                await db.execute(update_review, review, order_id, execute=True)
+    except PostgresError as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
-        connect.rollback()
         return
+
     answer = ("Благодарим за оставленный отзыв" if delivery_rating == 5 else
               "Спасибо за обратную связь!" if delivery_rating == 4 else
               "Спасибо за обратную связь, мы уже принимаем меры по улучшению качества работы!")
@@ -128,41 +125,39 @@ async def orders_pagination(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith('order_'), IsRegistered())
 async def show_order(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     order_id = data.get('order_id') or callback.data.split("_")[1]
-    get_order_info = (sql.SQL(
-        """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
+    order_id = int(order_id)
+    get_order_info = """SELECT o.order_id, o.order_status, u.user_surname, u.user_name, u.user_phonenumber, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
         JOIN delivery d ON o.order_id = d.order_id
         JOIN courier c ON d.courier_id = c.courier_id
         JOIN users u ON c.user_id = u.user_id
-    WHERE o.order_id = %s
+    WHERE o.order_id = $1
     GROUP BY o.order_id, u.user_surname, u.user_name, p.product_article, u.user_phonenumber;"""
-    ))
 
-    get_not_accept_order_info = (sql.SQL(
-        """SELECT o.order_id, o.order_status, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
+    get_not_accept_order_info = """SELECT o.order_id, o.order_status, p.product_article, COUNT(p.product_article), p.product_name, p.product_price, o.order_address 
     FROM "order" o 
         JOIN added a ON o.order_id = a.order_id 
         JOIN product p ON a.product_article = p.product_article 
-    WHERE o.order_id = %s
+    WHERE o.order_id = $1
     GROUP BY o.order_id, p.product_article;"""
-    ))
 
     is_order_accept = True
 
     try:
-        with connect.cursor() as cur:
-            order_info = cur.execute(get_order_info, (order_id,)).fetchall()
-            if not order_info:
-                order_info = cur.execute(get_not_accept_order_info, (order_id,)).fetchall()
-                is_order_accept = False
-    except ps.Error as e:
+        order_info = await db.execute(get_order_info, order_id, fetch=True)
+        if not order_info:
+            order_info = await db.execute(get_not_accept_order_info, order_id, fetch=True)
+            is_order_accept = False
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
         await callback.answer()
+        return
+    except RuntimeWarning as R:
+        logging.exception(f"Произошла ошибка при выполнении запроса: {R}")
         return
 
     if is_order_accept:
@@ -183,7 +178,7 @@ async def order_action(callback: CallbackQuery, state: FSMContext):
         case "confirmReceipt":
             await confirm_receipt(callback, state, order_id)
         case "retrySearch":
-            await Database.notify_channel('create_order', f'order_id: {order_id}')
+            await db.notify_channel('create_order', f'order_id: {order_id}')
         case "cancelOrder":
             await cancel_order(callback, state, order_id)
         case "back":
@@ -213,16 +208,16 @@ async def get_orders(callback: CallbackQuery, state: FSMContext):
     if client_id is None:
         return
 
-    query = sql.SQL("SELECT o.order_id FROM \"order\" o WHERE o.client_id = %s;")
-    connect: ps.connect = Database.get_connection()
-    with connect.cursor() as cur:
-        try:
-            rows = cur.execute(query, (client_id,)).fetchall()
-            orders = [r[0] for r in rows]
-        except ps.Error as e:
-            logging.exception(f"Ошибка при получении заказов: {e}")
-            connect.rollback()
-            return
+    query = "SELECT o.order_id FROM \"order\" o WHERE o.client_id = $1 ORDER BY o.order_id;"
+    try:
+        rows = await db.execute(query, client_id, fetch=True)
+        orders = [r['order_id'] for r in rows]
+    except PostgresError as e:
+        logging.exception(f"Ошибка при получении заказов: {e}")
+        return
+    except RuntimeWarning as R:
+        logging.exception(f"Произошла ошибка при выполнении запроса: {R}")
+        return
 
     await state.update_data(orders_list=orders, orders_page=0)
     await show_orders(callback, state)
@@ -250,53 +245,44 @@ async def show_orders(callback: CallbackQuery, state: FSMContext):
 
 
 async def confirm_receipt(callback: CallbackQuery, state: FSMContext, order_id: int):
-    connect: ps.connect = Database.get_connection()
     data = await state.get_data()
     msg = data.get('msg')
 
     await callback.message.edit_text(text=f"{msg}\nПожалуйста оцените доставку!", reply_markup=get_rate_order_kb())
     try:
-        with connect.cursor() as cur:
-            if cur.execute("SELECT confirm_receipt(%s)", (order_id,)).fetchone()[0] == 1:
-                raise Error()
-            connect.commit()
-    except ps.Error as e:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                if await db.execute("SELECT confirm_receipt($1)", order_id, fetchval=True) == 1:
+                    raise PostgresError()
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса: {e}")
-        connect.rollback()
 
 
 async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int):
-    connect: ps.connect = Database.get_connection()
+    ic(order_id)
     try:
-        with connect.cursor() as cur:
-            if cur.execute("SELECT cancel_order(%s)", (order_id,)) == 1:
-                raise LockNotAvailable()
-            await callback.answer("Заказ успешно удален..", show_alert=True)
-            connect.commit()
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                if await db.execute("SELECT cancel_order($1)", order_id, fetchval=True) == 1:
+                    raise LockNotAvailable()
+                await callback.answer("Заказ успешно удален..", show_alert=True)
         await handle_profile_callback(callback, state)
     except LockNotAvailable:
-        connect.rollback()
         await callback.answer("Заказ уже принят курьером!")
         return
-    except ps.Error as p:
+    except PostgresError as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
-        connect.rollback()
 
 
 async def send_notify(order_id: int, notify_type: str):
-    connect: ps.connect = Database.get_connection()
-    get_client_id = (sql.SQL(
-        "SELECT client_id FROM \"order\" WHERE order_id = %s;"
-    ))
-    get_user_tgchat_id = (sql.SQL(
-        "SELECT u.user_tgchat_id FROM users u JOIN client c ON u.user_id = c.user_id WHERE c.client_id = %s;"
-    ))
+    get_client_id = "SELECT client_id FROM \"order\" WHERE order_id = $1;"
+    get_user_tgchat_id = "SELECT u.user_tgchat_id FROM users u JOIN client c ON u.user_id = c.user_id WHERE c.client_id = $1;"
     try:
-        with connect.cursor() as cur:
-            client_id = cur.execute(get_client_id, (order_id,)).fetchone()[0]
-            tgchat_id = cur.execute(get_user_tgchat_id, (client_id,)).fetchone()[0]
-    except ps.Error as p:
+        client_id = await db.execute(get_client_id, order_id, fetchval=True)
+        tgchat_id = await db.execute(get_user_tgchat_id, client_id, fetchval=True)
+    except PostgresError as p:
         logging.exception(f"Произошла ошибка при выполнении запроса: {p}")
+        return
 
     msg = ("Ваш заказ принят курьером! Ожидайте получения"
            if notify_type == "order_accept"
@@ -308,27 +294,20 @@ async def send_notify(order_id: int, notify_type: str):
 
 
 async def get_user_info(user_tgchat_id: int, state: FSMContext) -> str | None:
-    connect: ps.connect = Database.get_connection()
-    get_user_id = (sql.SQL(
-        "SELECT user_id FROM users WHERE user_tgchat_id = %s AND user_role = 'user';"
-    ))
-    get_user_nickname = (sql.SQL(
-        "SELECT c.client_nickname FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = %s;"
-    ))
-    get_client_id = (sql.SQL(
-        "SELECT c.client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = %s;"
-    ))
-    get_order_count = (sql.SQL(
-        "SELECT COUNT(*) FROM \"order\" WHERE client_id = %s;"
-    ))
-    get_order_total_amount = (sql.SQL(
-        """SELECT SUM(p.product_price) FROM product p 
+    get_user_id = "SELECT user_id FROM users WHERE user_tgchat_id = $1 AND user_role = 'user';"
+
+    get_user_nickname = "SELECT c.client_nickname FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = $1;"
+
+    get_client_id = "SELECT c.client_id FROM client c JOIN users u on c.user_id = u.user_id WHERE u.user_id = $1;"
+
+    get_order_count = "SELECT COUNT(*) FROM \"order\" WHERE client_id = $1;"
+
+    get_order_total_amount = """SELECT SUM(p.product_price) FROM product p 
         JOIN added a on a.product_article = p.product_article 
         JOIN \"order\" o on o.order_id = a.order_id 
-        WHERE o.client_id = %s;"""
-    ))
-    get_most_ordered_category = (sql.SQL(
-        """WITH user_category_stats AS (
+        WHERE o.client_id = $1;"""
+
+    get_most_ordered_category = """WITH user_category_stats AS (
     SELECT 
         p.product_category,
         COUNT(*) AS total_ordered
@@ -343,7 +322,7 @@ async def get_user_info(user_tgchat_id: int, state: FSMContext) -> str | None:
     JOIN 
         product p ON a.product_article = p.product_article
     WHERE 
-        u.user_id = %s
+        u.user_id = $1
     GROUP BY 
         p.product_category
 ),
@@ -363,23 +342,20 @@ WHERE
 ORDER BY 
     ucs.product_category;
         """
-    ))
-    get_user_register_date = (sql.SQL(
-        "SELECT client_registerdate FROM client WHERE user_id = %s;"
-    ))
+
+    get_user_register_date = "SELECT client_registerdate FROM client WHERE user_id = $1;"
+
     try:
-        with connect.cursor() as cur:
-            user_id = cur.execute(get_user_id, (user_tgchat_id,)).fetchone()[0]
-            user_nickname = cur.execute(get_user_nickname, (user_id,)).fetchone()[0]
-            client_id = cur.execute(get_client_id, (user_id,)).fetchone()[0]
-            order_count = cur.execute(get_order_count, (client_id,)).fetchone()[0]
-            order_total_amount = cur.execute(get_order_total_amount, (client_id,)).fetchone()[0]
-            most_ordered_category = cur.execute(get_most_ordered_category, (user_id,)).fetchall()
-            register_date = cur.execute(get_user_register_date, (user_id,)).fetchone()[0]
-            connect.commit()
-    except ps.Error as e:
+        user_id = await db.execute(get_user_id, user_tgchat_id, fetchval=True)
+        user_nickname = await db.execute(get_user_nickname, user_id, fetchval=True)
+        client_id = await db.execute(get_client_id, user_id, fetchval=True)
+        order_count = await db.execute(get_order_count, client_id, fetchval=True)
+        order_total_amount = await db.execute(get_order_total_amount, client_id, fetchval=True)
+        most_ordered_category = await db.execute(get_most_ordered_category, user_id, fetch=True)
+        register_date = await db.execute(get_user_register_date, user_id, fetchval=True)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-        connect.rollback()
+
         return None
     await state.update_data(client_id=client_id)
     time = dt.now().hour

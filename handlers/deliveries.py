@@ -1,8 +1,7 @@
-from handlers.profile import send_notify
+# from handlers.profile import send_notify
 
 
 async def get_notify(conn, pid, channel, payload):
     notify_type = payload.split(";")[0].split(":")[1].strip()
     order_id = int(payload.split(";")[1].split(":")[1].strip())
-    print(f"[{channel}] => {notify_type} => {order_id}")
-    await send_notify(order_id, notify_type)
+    # await send_notify(order_id, notify_type)

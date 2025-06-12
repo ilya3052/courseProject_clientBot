@@ -1,6 +1,5 @@
 import logging
 
-import psycopg as ps
 from aiogram import F
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
@@ -9,12 +8,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InlineKeyboardButton, \
     InlineKeyboardMarkup
-from psycopg import sql
+from asyncpg import PostgresError
 
 from Filters.IsRegistered import IsRegistered
-from core.database import Database
-from keyboards import get_categories_kb
-from keyboards import get_product_info_kb
+from core.database import db
+from keyboards import get_categories_kb, get_product_info_kb
 from keyboards import get_products_list_kb
 from .register import cmd_start
 
@@ -32,37 +30,34 @@ class Catalog(StatesGroup):
 
 @router.message(Command("catalog"), IsRegistered())
 async def cmd_catalog(message: Message, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     select_categories = """SELECT DISTINCT product_category FROM product"""
     try:
-        with connect.cursor() as cur:
-            categories_list = cur.execute(select_categories).fetchall()
-            await state.update_data(
-                categories_list=categories_list,
-                category_page=0,
-            )
-            await show_categories(state, message=message)
-    except ps.Error as e:
+        categories_list = await db.execute(select_categories, fetch=True)
+        categories_list = [item['product_category'] for item in categories_list]
+        await state.update_data(
+            categories_list=categories_list,
+            category_page=0,
+        )
+        await show_categories(state, message=message)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
 @router.callback_query(F.data.startswith("category_"), StateFilter(Catalog.select_category), IsRegistered())
 async def get_category(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     category = callback.data.split("_")[1]
-    select_products = (sql.SQL(
-        """SELECT product_article, product_name FROM product WHERE product_category = %s"""
-    ))
+    select_products = """SELECT product_article, product_name FROM product WHERE product_category = $1"""
+
     try:
-        with connect.cursor() as cur:
-            products = cur.execute(select_products, (callback.data.split("_")[1],)).fetchall()
-            await state.update_data(
-                products_list=products,
-                product_page=0,
-                category=category
-            )
-            await show_products(callback, state)
-    except ps.Error as e:
+        products = await db.execute(select_products, callback.data.split("_")[1], fetch=True)
+        products = [(item['product_article'], item['product_name']) for item in products]
+        await state.update_data(
+            products_list=products,
+            product_page=0,
+            category=category
+        )
+        await show_products(callback, state)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
 
 
@@ -110,22 +105,19 @@ async def product_list_action(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("product_"), StateFilter(Catalog.show_products), IsRegistered())
 async def get_product(callback: CallbackQuery, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
-    select_products = (sql.SQL(
-        """SELECT product_article FROM product WHERE product_category = %s"""
-    ))
-    try:
-        with connect.cursor() as cur:
-            data = await state.get_data()
-            articles = cur.execute(select_products, (data['category'],)).fetchall()
-            articles = [str(item[0]) for item in articles]
-            await state.update_data(articles=articles)
-            await callback.message.delete()
-            await state.set_state(Catalog.select_product)
+    select_products = """SELECT product_article FROM product WHERE product_category = $1"""
 
-            await state.update_data(current_article=callback.data.split("_")[1])
-            await show_product(callback, state, True)
-    except ps.Error as e:
+    try:
+        data = await state.get_data()
+        articles = await db.execute(select_products, data['category'], fetch=True)
+        articles = [item['product_article'] for item in articles]
+        await state.update_data(articles=articles)
+        await callback.message.delete()
+        await state.set_state(Catalog.select_product)
+
+        await state.update_data(current_article=int(callback.data.split("_")[1]))
+        await show_product(callback, state, True)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
     await callback.answer(show_alert=False)
 
@@ -171,6 +163,8 @@ async def product_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+#
+#
 @router.message(F.text, StateFilter(Catalog.create_order))
 async def address_input(message: Message, state: FSMContext):
     address = message.text
@@ -184,7 +178,7 @@ async def address_input(message: Message, state: FSMContext):
                          )
                          )
 
-    await Database.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
+    await db.notify_channel('create_order', f'order_id: {(await state.get_data()).get('order_id')}')
     await state.clear()
     await state.set_state(None)
 
@@ -254,26 +248,22 @@ async def show_categories(state: FSMContext, callback: CallbackQuery = None, mes
         logging.exception(f"Произошла ошибка при выполнении запроса {TBR}")
 
 
+#
 async def show_products(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     products = data['products_list']
     page = data.get('product_page', 0)
     category = data['category']
+
     try:
         await callback.message.edit_text(
             f"Товары категории {category}.\nВсего в категории {len(products)} товаров",
             reply_markup=get_products_list_kb(products[page_size * page:page_size * (page + 1)])
         )
-        await state.set_state(Catalog.show_products)
     except TelegramBadRequest as TBR:
-        logging.debug(f"Поймано некритичное исключение при попытке отредактировать сообщение {TBR}")
-        loading_msg = await callback.message.answer("⌛ Загружаем товары...")
-        await callback.message.delete()
-        await loading_msg.edit_text(
-            f"Товары категории {category}.\nВсего в категории {len(products)} товаров",
-            reply_markup=get_products_list_kb(products[page_size * page:page_size * (page + 1)])
-        )
-        await state.set_state(Catalog.show_products)
+        logging.info(f"Поймано некритичное исключение при попытке отредактировать сообщение {TBR}")
+
+    await state.set_state(Catalog.show_products)
 
 
 async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: bool):
@@ -282,17 +272,16 @@ async def show_product(callback: CallbackQuery, state: FSMContext, is_new_msg: b
     image = FSInputFile(f"product_images/{current_article}.jpg")
     await state.update_data(current_image_path=image)
 
-    connect: ps.connect = Database.get_connection()
-    select_product_info = sql.SQL(
-        """SELECT product_price, product_description FROM product WHERE product_article = %s"""
-    )
+    select_product_info = """SELECT product_price, product_description FROM product WHERE product_article = $1"""
 
     try:
-        with connect.cursor() as cur:
-            product_info = cur.execute(select_product_info, (current_article,)).fetchone()
-            description = f"{product_info[1]}\nСтоимость товара: {product_info[0]}"
-            await state.update_data(product_description=description)
-    except ps.Error as e:
+        product_info = await db.execute(select_product_info, current_article, fetch=True)
+        product_info = [dict(item) for item in product_info][0]
+
+        description = f"{product_info['product_description']}\nСтоимость товара: {product_info['product_price']}"
+
+        await state.update_data(product_description=description)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
         return
 
@@ -331,16 +320,14 @@ async def confirm_order(message: Message, state: FSMContext):
 
 
 async def create_order(message: Message, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
     address = (await state.get_data()).get('address')
     try:
-        with connect.cursor() as cur:
-            order_id = cur.execute("SELECT create_order(%s, %s);", (message.chat.id, address,)).fetchone()[0]
-            await state.update_data(order_id=order_id)
-            connect.commit()
-    except ps.Error as e:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                order_id = await db.execute("SELECT create_order($1, $2);", message.chat.id, address, fetchval=True)
+                await state.update_data(order_id=order_id)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-        connect.rollback()
 
 
 async def add_products(state: FSMContext):
@@ -348,14 +335,9 @@ async def add_products(state: FSMContext):
     cart = data['cart']
     order_id = data.get('order_id')
     products_list = [(order_id, int(item)) for item, count in cart.items() for _ in range(count)]
-    insert_product = (sql.SQL(
-        "INSERT INTO added (order_id, product_article) VALUES (%s, %s)"
-    ))
-    connect: ps.connect = Database.get_connection()
+    insert_product = "INSERT INTO added (order_id, product_article) VALUES ($1, $2)"
+
     try:
-        with connect.cursor() as cur:
-            cur.executemany(insert_product, products_list)
-            connect.commit()
-    except ps.Error as e:
+        await db.execute(insert_product, products_list, executemany=True)
+    except PostgresError as e:
         logging.exception(f"Произошла ошибка при выполнении запроса {e}")
-        connect.rollback()

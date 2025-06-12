@@ -1,10 +1,11 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from icecream import ic
 
 
 def get_categories_kb(data: list[str]):
     builder = InlineKeyboardBuilder()
     for item in data:
-        builder.button(text=item[0], callback_data=f"category_{item[0]}")
+        builder.button(text=item, callback_data=f"category_{item}")
     builder.adjust(3)
 
     static_builder = InlineKeyboardBuilder()

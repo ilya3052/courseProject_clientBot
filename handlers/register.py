@@ -1,15 +1,14 @@
 import logging
 import re
 
-import psycopg as ps
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
-from psycopg import sql
+from asyncpg import PostgresError
 
-from core.database import Database
+from core.database import db
 
 router = Router()
 
@@ -22,22 +21,16 @@ class Register(StatesGroup):
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    connect: ps.connect = Database.get_connection()
-    select_nickname = (sql.SQL(
-        """SELECT c.client_nickname 
+    select_nickname = """SELECT c.client_nickname 
         FROM users u JOIN client c ON u.user_id = c.user_id 
-        WHERE u.user_tgchat_id = %s;"""
-    ))
+        WHERE u.user_tgchat_id = $1;"""
+
     try:
-        with connect.cursor() as cur:
-            nickname = cur.execute(select_nickname, (message.chat.id,)).fetchone()
-            connect.commit()
-            logging.info("Запрос выполнен")
-    except ps.Error as e:
-        connect.rollback()
+        nickname = await db.execute(select_nickname, message.chat.id, fetchval=True)
+    except PostgresError as e:
         logging.critical(f"Запрос не выполнен. {e}")
 
-    if nickname is None:
+    if not nickname:
         await message.answer(
             "Добрый день! Похоже, вы не зарегистрированы в системе, давайте пройдем быструю регистрацию.\n"
             "Укажите имя в формате ФИО (отчество при наличии)\n"
@@ -46,7 +39,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await state.update_data(tgchat_id=message.chat.id, username=message.from_user.username)
         logging.info("Имя введено")
     else:
-        await message.answer(f"Добро пожаловать, {nickname[0]}!")
+        await message.answer(f"Добро пожаловать, {nickname}!")
         logging.info("Осуществлен вход в систему")
 
 
@@ -86,35 +79,27 @@ async def enter_phonenumber(message: Message, state: FSMContext):
 
 
 async def insert_data(data: dict) -> bool:
-    connect: ps.connect = Database.get_connection()
     data['phonenumber'] = (data['phonenumber'].replace('(', '')
                            .replace(')', '')
                            .replace('-', '')
                            .replace('+', ''))
-    insert_user = (sql.SQL(
-        """INSERT INTO users 
+    insert_user = """INSERT INTO users 
             (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber, user_tg_username) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING user_id;"""
-    ))
-    insert_client = (sql.SQL(
-        "INSERT INTO client (user_id, client_nickname) VALUES (%s, %s);"
-    ))
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING user_id;"""
+
+    insert_client = "INSERT INTO client (user_id, client_nickname) VALUES ($1, $2);"
+
     try:
-        with connect.cursor() as cur:
-            user_id = cur.execute(
-                insert_user, (data['tgchat_id'], data['fullname'][1], data['fullname'][0],
-                              data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
-                              data['phonenumber'], data['username'])).fetchone()[0]
-            cur.execute(insert_client, (
-                user_id, data['nickname']
-            ))
-            connect.commit()
-            logging.info("Запрос выполнен")
-            return True
-    except ps.Error as e:
-        connect.rollback()
+        user_id = await db.execute(
+            insert_user, data['tgchat_id'], data['fullname'][1], data['fullname'][0],
+            data['fullname'][2] if len(data['fullname']) > 2 else None, 'user',
+            data['phonenumber'], data['username'], fetchval=True)
+        await db.execute(insert_client, user_id, data['nickname'], execute=True)
+        logging.info("Запрос выполнен")
+        return True
+    except PostgresError as e:
         logging.critical(f"Запрос не выполнен. {e}")
+        return False
     except Exception as e:
-        connect.rollback()
         logging.exception(f"При выполнении запроса произошла ошибка: {e}")
         return False

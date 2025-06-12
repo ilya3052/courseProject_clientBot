@@ -1,82 +1,94 @@
 import logging
 import os
-import sys
+from typing import Union
 
 import asyncpg
-import psycopg as ps
+from asyncpg import Pool, Connection
 from dotenv import load_dotenv
-from psycopg import AsyncConnection
 
 load_dotenv()
 
 
 class Database:
-    _connect: ps.connect = None
-    _async_connect: AsyncConnection.connect = None
+    def __init__(self):
+        self.pool: Union[Pool, None] = None
+        self._listen_conn: Union[Connection, None] = None
 
-    @staticmethod
-    def get_connection():
-        if Database._connect is None:
-            try:
-                Database._connect = ps.connect(
-                    dbname=os.getenv("DB_NAME"),
-                    user=os.getenv("USER"),
-                    password=os.getenv("PASSWORD"),
-                    host=os.getenv("HOST"),
-                    port=os.getenv("PORT")
-                )
-            except ps.Error:
-                logging.critical("Соединение не установлено!")
-                sys.exit(1)
-        return Database._connect
+    async def create_pool(self):
+        user = os.getenv("USER")
+        password = os.getenv("PASSWORD")
+        database = os.getenv("DB_NAME")
+        host = os.getenv("HOST")
+        port = os.getenv("PORT")
+        self.pool = await asyncpg.create_pool(user=user,
+                                              password=password,
+                                              database=database,
+                                              host=host,
+                                              port=port)
 
-    @staticmethod
-    async def get_async_connection():
-        if Database._async_connect is None:
-            try:
-                Database._async_connect = await asyncpg.connect(
-                    user=os.getenv("USER"),
-                    password=os.getenv("PASSWORD"),
-                    database=os.getenv("DB_NAME"),
-                    host=os.getenv("HOST"),
-                    port=os.getenv("PORT")
-                )
-                logging.info("Асинхронное соединение через asyncpg установлено")
-            except Exception as e:
-                logging.critical(f"Асинхронное соединение не установлено: {e}")
-                sys.exit(1)
-        return Database._async_connect
+    async def execute(self, command: str, *args,
+                      fetch: bool = False,
+                      fetchval: bool = False,
+                      fetchrow: bool = False,
+                      execute: bool = False,
+                      executemany: bool = False):
+        async with self.pool.acquire() as connection:
+            connection: Connection
+            async with connection.transaction():
+                if fetch:
+                    result = await connection.fetch(command, *args)
+                elif fetchval:
+                    result = await connection.fetchval(command, *args)
+                elif fetchrow:
+                    result = await connection.fetchrow(command, *args)
+                elif execute:
+                    result = await connection.execute(command, *args)
+                elif executemany:
+                    result = await connection.executemany(command, *args)
+        return result
 
-    @staticmethod
-    async def listen_channel(channel_name: str, callback):
-        conn = await Database.get_async_connection()
-        await conn.add_listener(channel_name, callback)
+    async def is_user_registered(self, user_id):
+        query = """
+               SELECT EXISTS(
+                   SELECT 1 
+                   FROM users 
+                   WHERE user_tgchat_id = $1 AND user_role = 'user'
+               )
+           """
+        try:
+            result = await self.execute(query, user_id, fetchval=True)
+            return bool(result)
+        except Exception as e:
+            logging.exception(f"Ошибка проверки регистрации: {e}")
+            return False
+
+    async def notify_channel(self, channel_name: str, payload: str):
+        async with self.pool.acquire() as conn:
+            await conn.execute(f"NOTIFY {channel_name}, '{payload.replace("'", "''")}'")
+            logging.info(f"Отправлено уведомление на канал '{channel_name}': {payload}")
+
+    async def listen_channel(self, channel_name: str, callback):
+        if not self.pool:
+            raise RuntimeError("Connection pool is not initialized. Call create_pool() first.")
+
+        self._listen_conn = await self.pool.acquire()
+        await self._listen_conn.add_listener(channel_name, callback)
         logging.info(f"Подписка на канал '{channel_name}' установлена")
 
-    @staticmethod
-    async def notify_channel(channel_name: str, payload: str):
-        conn = await Database.get_async_connection()
-        payload_escaped = payload.replace("'", "''")
-        sql = f"NOTIFY {channel_name}, '{payload_escaped}';"
+    async def close(self):
+        """Закрывает все соединения с базой данных"""
+        if self._listen_conn:
+            await self.pool.release(self._listen_conn)
+            self._listen_conn = None
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+        logging.info("Все соединения с базой данных закрыты")
 
-        await conn.execute(sql)
-        logging.info(f"Отправлено уведомление на канал '{channel_name}': {payload}")
 
-    @staticmethod
-    async def close_connection():
-        if Database._connect is not None:
-            Database._connect.close()
-        if Database._async_connect is not None:
-            await Database._async_connect.close()
+db = Database()
 
-    @staticmethod
-    async def is_user_registered(user_id):
-        conn = Database.get_connection()
-        try:
-            with conn.cursor() as cur:
-                status = cur.execute(
-                    "SELECT 1 FROM users WHERE user_tgchat_id = {} AND user_role = 'user';".format(user_id)).fetchone()[
-                    0]
-                if status: return True
-        except TypeError:
-            return False
+
+async def create_db() -> Database:
+    await db.create_pool()
+    return db
