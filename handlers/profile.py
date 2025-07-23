@@ -9,7 +9,6 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from asyncpg import PostgresError
 from icecream import ic
-from psycopg.errors import LockNotAvailable
 
 from Filters.IsRegistered import IsRegistered
 from core.bot_instance import bot
@@ -264,10 +263,10 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext, order_id: int
         async with db.pool.acquire() as connection:
             async with connection.transaction():
                 if await db.execute("SELECT cancel_order($1)", order_id, fetchval=True) == 1:
-                    raise LockNotAvailable()
+                    raise Warning()
                 await callback.answer("Заказ успешно удален..", show_alert=True)
         await handle_profile_callback(callback, state)
-    except LockNotAvailable:
+    except Warning:
         await callback.answer("Заказ уже принят курьером!")
         return
     except PostgresError as p:

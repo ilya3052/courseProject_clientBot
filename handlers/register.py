@@ -84,7 +84,7 @@ async def insert_data(data: dict) -> bool:
                            .replace('-', '')
                            .replace('+', ''))
     insert_user = """INSERT INTO users 
-            (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber, user_tg_username) 
+            (user_tgchat_id, user_name, user_surname, user_patronymic, user_role, user_phonenumber, user_shortlink) 
             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING user_id;"""
 
     insert_client = "INSERT INTO client (user_id, client_nickname) VALUES ($1, $2);"
